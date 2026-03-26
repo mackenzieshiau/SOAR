@@ -13,6 +13,8 @@ const SQLITE_SCHEMA = `
     band text not null,
     grade_band text not null,
     wida_level integer not null,
+    allotment_level integer not null default 1,
+    daily_average_xp_goal integer not null default 120,
     active integer not null default 1,
     created_at text not null
   );
@@ -56,6 +58,7 @@ const SQLITE_SCHEMA = `
     evidence_of_production text not null,
     repeated_in_new_context integer not null default 0,
     new_context_note text,
+    override_note text,
     created_at text not null
   );
 
@@ -125,6 +128,8 @@ function mapStudents(rows) {
     band: row.band,
     gradeBand: row.grade_band,
     widaLevel: String(row.wida_level),
+    allotmentLevel: String(row.allotment_level ?? row.wida_level ?? 1),
+    dailyAverageXpGoal: Number(row.daily_average_xp_goal ?? 120),
     active: toBoolean(row.active),
     createdAt: row.created_at,
   }));
@@ -175,6 +180,7 @@ function mapInterventions(rows) {
     evidenceOfProduction: row.evidence_of_production,
     repeatedInNewContext: toBoolean(row.repeated_in_new_context),
     newContextNote: row.new_context_note || "",
+    overrideNote: row.override_note || "",
     createdAt: row.created_at,
   }));
 }
@@ -229,6 +235,7 @@ class SQLiteDataService {
     }
 
     this.db.run(SQLITE_SCHEMA);
+    this.ensureManualXpColumns();
     this.ensureCatalogDefaults();
     this.ensureAuthDefaults();
     this.persist();
@@ -255,14 +262,64 @@ class SQLiteDataService {
     localStorage.setItem(DB_STORAGE_KEY, arrayToBase64(bytes));
   }
 
+  ensureManualXpColumns() {
+    const studentColumns = new Set(
+      this.query("pragma table_info(students)").map((column) => column.name),
+    );
+    if (!studentColumns.has("allotment_level")) {
+      this.run(
+        "alter table students add column allotment_level integer not null default 1",
+      );
+    }
+    if (!studentColumns.has("daily_average_xp_goal")) {
+      this.run(
+        "alter table students add column daily_average_xp_goal integer not null default 120",
+      );
+    }
+    this.run(
+      `
+        update students
+        set allotment_level = coalesce(allotment_level, wida_level, 1),
+            daily_average_xp_goal = coalesce(daily_average_xp_goal, 120)
+      `,
+    );
+
+    const interventionColumns = new Set(
+      this.query("pragma table_info(interventions)").map((column) => column.name),
+    );
+    if (!interventionColumns.has("override_note")) {
+      this.run("alter table interventions add column override_note text");
+    }
+  }
+
   seedDatabase() {
     const seed = buildDemoSeed();
 
     seed.students.forEach((student) => {
       this.run(
         `
-          insert into students (id, name, band, grade_band, wida_level, active, created_at)
-          values ($id, $name, $band, $gradeBand, $widaLevel, $active, $createdAt)
+          insert into students (
+            id,
+            name,
+            band,
+            grade_band,
+            wida_level,
+            allotment_level,
+            daily_average_xp_goal,
+            active,
+            created_at
+          )
+          values (
+            $id,
+            $name,
+            $band,
+            $gradeBand,
+            $widaLevel,
+            $allotmentLevel,
+            $dailyAverageXpGoal,
+            $active,
+            $createdAt
+          )
         `,
         {
           $id: student.id,
@@ -270,6 +327,8 @@ class SQLiteDataService {
           $band: student.band,
           $gradeBand: student.gradeBand,
           $widaLevel: Number(student.widaLevel),
+          $allotmentLevel: Number(student.allotmentLevel || student.widaLevel),
+          $dailyAverageXpGoal: Number(student.dailyAverageXpGoal || 120),
           $active: toDbBoolean(student.active),
           $createdAt: student.createdAt,
         },
@@ -341,6 +400,7 @@ class SQLiteDataService {
             evidence_of_production,
             repeated_in_new_context,
             new_context_note,
+            override_note,
             created_at
           )
           values (
@@ -358,6 +418,7 @@ class SQLiteDataService {
             $evidenceOfProduction,
             $repeatedInNewContext,
             $newContextNote,
+            $overrideNote,
             $createdAt
           )
         `,
@@ -376,6 +437,7 @@ class SQLiteDataService {
           $evidenceOfProduction: intervention.evidenceOfProduction,
           $repeatedInNewContext: toDbBoolean(intervention.repeatedInNewContext),
           $newContextNote: intervention.newContextNote,
+          $overrideNote: intervention.overrideNote || "",
           $createdAt: intervention.createdAt,
         },
       );
@@ -517,6 +579,8 @@ class SQLiteDataService {
               band = $band,
               grade_band = $gradeBand,
               wida_level = $widaLevel,
+              allotment_level = $allotmentLevel,
+              daily_average_xp_goal = $dailyAverageXpGoal,
               active = $active
           where id = $id
         `,
@@ -526,14 +590,36 @@ class SQLiteDataService {
           $band: student.band,
           $gradeBand: student.gradeBand,
           $widaLevel: Number(student.widaLevel),
+          $allotmentLevel: Number(student.allotmentLevel || student.widaLevel),
+          $dailyAverageXpGoal: Number(student.dailyAverageXpGoal),
           $active: toDbBoolean(student.active),
         },
       );
     } else {
       this.run(
         `
-          insert into students (id, name, band, grade_band, wida_level, active, created_at)
-          values ($id, $name, $band, $gradeBand, $widaLevel, $active, $createdAt)
+          insert into students (
+            id,
+            name,
+            band,
+            grade_band,
+            wida_level,
+            allotment_level,
+            daily_average_xp_goal,
+            active,
+            created_at
+          )
+          values (
+            $id,
+            $name,
+            $band,
+            $gradeBand,
+            $widaLevel,
+            $allotmentLevel,
+            $dailyAverageXpGoal,
+            $active,
+            $createdAt
+          )
         `,
         {
           $id: id,
@@ -541,6 +627,8 @@ class SQLiteDataService {
           $band: student.band,
           $gradeBand: student.gradeBand,
           $widaLevel: Number(student.widaLevel),
+          $allotmentLevel: Number(student.allotmentLevel || student.widaLevel),
+          $dailyAverageXpGoal: Number(student.dailyAverageXpGoal),
           $active: toDbBoolean(student.active),
           $createdAt: createdAt,
         },
@@ -699,7 +787,8 @@ class SQLiteDataService {
               notes = $notes,
               evidence_of_production = $evidenceOfProduction,
               repeated_in_new_context = $repeatedInNewContext,
-              new_context_note = $newContextNote
+              new_context_note = $newContextNote,
+              override_note = $overrideNote
           where id = $id
         `,
         {
@@ -717,6 +806,7 @@ class SQLiteDataService {
           $evidenceOfProduction: intervention.evidenceOfProduction.trim(),
           $repeatedInNewContext: toDbBoolean(intervention.repeatedInNewContext),
           $newContextNote: intervention.newContextNote?.trim() || "",
+          $overrideNote: intervention.overrideNote?.trim() || "",
         },
       );
     } else {
@@ -737,6 +827,7 @@ class SQLiteDataService {
             evidence_of_production,
             repeated_in_new_context,
             new_context_note,
+            override_note,
             created_at
           )
           values (
@@ -754,6 +845,7 @@ class SQLiteDataService {
             $evidenceOfProduction,
             $repeatedInNewContext,
             $newContextNote,
+            $overrideNote,
             $createdAt
           )
         `,
@@ -772,6 +864,7 @@ class SQLiteDataService {
           $evidenceOfProduction: intervention.evidenceOfProduction.trim(),
           $repeatedInNewContext: toDbBoolean(intervention.repeatedInNewContext),
           $newContextNote: intervention.newContextNote?.trim() || "",
+          $overrideNote: intervention.overrideNote?.trim() || "",
           $createdAt: createdAt,
         },
       );

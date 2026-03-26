@@ -1,2 +1,4 @@
 tmp/
 skills/
+.playwright-cli/
+output/

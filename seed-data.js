@@ -6,6 +6,9 @@ export const GRADE_BAND_OPTIONS = [
   "Grades 4-5",
 ];
 export const WIDA_OPTIONS = ["1", "2", "3", "4", "5", "6"];
+export const DAILY_AVERAGE_XP_GOAL_OPTIONS = [
+  50, 60, 70, 80, 90, 100, 110, 120, 130, 140, 150,
+];
 
 export const DEFAULT_CONTENT_AREAS = [
   { id: "ca-reading", name: "Reading", active: true, sortOrder: 1 },
@@ -72,6 +75,8 @@ export function buildDemoSeed() {
       band: "K-2",
       gradeBand: "Grade 1",
       widaLevel: "2",
+      allotmentLevel: "2",
+      dailyAverageXpGoal: 80,
       active: true,
       createdAt: createdAt(-30),
     },
@@ -81,6 +86,8 @@ export function buildDemoSeed() {
       band: "K-2",
       gradeBand: "Grades 2-3",
       widaLevel: "3",
+      allotmentLevel: "3",
+      dailyAverageXpGoal: 100,
       active: true,
       createdAt: createdAt(-25),
     },
@@ -90,6 +97,8 @@ export function buildDemoSeed() {
       band: "3-6",
       gradeBand: "Grades 4-5",
       widaLevel: "4",
+      allotmentLevel: "4",
+      dailyAverageXpGoal: 90,
       active: true,
       createdAt: createdAt(-21),
     },
@@ -120,6 +129,7 @@ export function buildDemoSeed() {
       evidenceOfProduction: "Used gestures to retell the page.",
       repeatedInNewContext: false,
       newContextNote: "",
+      overrideNote: "",
       createdAt: timestampFor(0, 9, 12),
     },
     {
@@ -137,6 +147,7 @@ export function buildDemoSeed() {
       evidenceOfProduction: "Copied target words and read them aloud.",
       repeatedInNewContext: false,
       newContextNote: "",
+      overrideNote: "",
       createdAt: timestampFor(-1, 10, 24),
     },
     {
@@ -154,6 +165,7 @@ export function buildDemoSeed() {
       evidenceOfProduction: "Labeled the parts of the word problem before solving.",
       repeatedInNewContext: false,
       newContextNote: "",
+      overrideNote: "",
       createdAt: timestampFor(0, 11, 8),
     },
     {
@@ -171,6 +183,7 @@ export function buildDemoSeed() {
       evidenceOfProduction: "Completed the focus group worksheet with one prompt.",
       repeatedInNewContext: false,
       newContextNote: "",
+      overrideNote: "",
       createdAt: timestampFor(-2, 13, 4),
     },
     {
@@ -188,6 +201,7 @@ export function buildDemoSeed() {
       evidenceOfProduction: "Explained the answer using the sentence frame.",
       repeatedInNewContext: false,
       newContextNote: "",
+      overrideNote: "",
       createdAt: timestampFor(0, 14, 18),
     },
   ];

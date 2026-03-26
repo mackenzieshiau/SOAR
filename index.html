@@ -20,7 +20,11 @@
           </div>
 
           <div class="login-panels">
-            <form id="loginForm" class="login-panel stack-md">
+            <form
+              id="loginForm"
+              class="login-panel stack-md"
+              onsubmit="return window.soarFallbackTeacherLogin(event)"
+            >
               <div>
                 <h2>Teacher Access</h2>
                 <p class="muted">Use the shared code for quick student logging.</p>
@@ -107,6 +111,9 @@
                 type="button"
               >
                 Settings
+              </button>
+              <button class="button button-secondary" id="analyticsButton" type="button">
+                Heat Map
               </button>
               <button class="button button-secondary" id="exportButton" type="button">
                 Export
@@ -295,6 +302,10 @@
                     <option value="3-6">3-6</option>
                   </select>
                 </label>
+                <label class="toggle-field filter-toggle">
+                  <input id="inactiveFilterInput" type="checkbox" />
+                  <span>Inactive</span>
+                </label>
               </div>
             </section>
 
@@ -310,14 +321,24 @@
                 <h2 id="studentProfileName">Student Profile</h2>
                 <p class="muted" id="studentProfileSummary"></p>
               </div>
-              <button
-                class="button button-primary button-lg"
-                id="openAddInterventionButton"
-                type="button"
-              >
-                Add Intervention
-              </button>
+              <div class="profile-header-actions">
+                <label class="field profile-status-field">
+                  <span>Status</span>
+                  <select id="studentStatusSelect">
+                    <option value="active">Active</option>
+                    <option value="inactive">Inactive</option>
+                  </select>
+                </label>
+                <button
+                  class="button button-primary button-lg"
+                  id="openAddInterventionButton"
+                  type="button"
+                >
+                  Add Intervention
+                </button>
+              </div>
             </div>
+            <p class="status-line" id="studentStatusMessage"></p>
 
             <section class="profile-overview card" id="studentOverviewCard"></section>
 
@@ -587,6 +608,72 @@
               <p id="exportStatus" class="status-line"></p>
             </section>
           </section>
+
+          <section id="analyticsScreen" class="screen hidden">
+            <div class="screen-header">
+              <div>
+                <h2>Heat Map Analytics</h2>
+                <p class="muted">
+                  Review manual XP by day, app, and content area to spot dependency patterns early.
+                </p>
+              </div>
+            </div>
+
+            <section class="card stack-md">
+              <form class="analytics-filter-grid" id="analyticsFilterForm">
+                <label class="field">
+                  <span>Student</span>
+                  <select id="analyticsStudentSelect"></select>
+                </label>
+                <label class="field">
+                  <span>Start Date</span>
+                  <input id="analyticsStartDateInput" type="date" />
+                </label>
+                <label class="field">
+                  <span>End Date</span>
+                  <input id="analyticsEndDateInput" type="date" />
+                </label>
+                <label class="field">
+                  <span>Content Area / App</span>
+                  <select id="analyticsAreaAppFilter"></select>
+                </label>
+                <label class="field">
+                  <span>SOAR Level</span>
+                  <select id="analyticsLevelFilter"></select>
+                </label>
+                <label class="field">
+                  <span>Daily Average Band</span>
+                  <select id="analyticsGoalBandFilter"></select>
+                </label>
+              </form>
+            </section>
+
+            <section class="analytics-layout">
+              <section class="card stack-md">
+                <div class="section-title-row">
+                  <div>
+                    <h3>Heat Map</h3>
+                    <p class="muted">
+                      Hover-friendly cells show exact manual XP totals and percent of each day's cap.
+                    </p>
+                  </div>
+                </div>
+                <div id="analyticsHeatMap" class="analytics-heatmap"></div>
+              </section>
+
+              <section class="card stack-md">
+                <div class="section-title-row">
+                  <div>
+                    <h3>Audit Summary</h3>
+                    <p class="muted">
+                      Flags highlight over-reliance on one app or one intervention type.
+                    </p>
+                  </div>
+                </div>
+                <div id="analyticsSummary" class="stack-sm"></div>
+              </section>
+            </section>
+          </section>
         </main>
       </div>
     </div>
@@ -633,6 +720,33 @@
               <option value="4">4</option>
               <option value="5">5</option>
               <option value="6">6</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>SOAR / WIDA Allotment Level</span>
+            <select id="studentAllotmentLevelInput" required>
+              <option value="1">1</option>
+              <option value="2">2</option>
+              <option value="3">3</option>
+              <option value="4">4</option>
+              <option value="5">5</option>
+              <option value="6">6</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Daily Average XP Goal</span>
+            <select id="studentDailyAverageGoalInput" required>
+              <option value="50">50</option>
+              <option value="60">60</option>
+              <option value="70">70</option>
+              <option value="80">80</option>
+              <option value="90">90</option>
+              <option value="100">100</option>
+              <option value="110">110</option>
+              <option value="120">120</option>
+              <option value="130">130</option>
+              <option value="140">140</option>
+              <option value="150">150</option>
             </select>
           </label>
           <label class="toggle-field">
@@ -709,6 +823,24 @@
           <span>Evidence of Production</span>
           <textarea id="interventionEvidenceInput" rows="3" required></textarea>
         </label>
+        <section class="card stack-sm intervention-cap-card">
+          <div class="section-title-row">
+            <div>
+              <h3>Manual XP Guardrail</h3>
+              <p class="muted">Live cap check based on this student's daily allotment.</p>
+            </div>
+          </div>
+          <div id="interventionCapSummary" class="cap-summary-card"></div>
+          <p id="interventionCapWarning" class="status-line"></p>
+        </section>
+        <label class="field hidden" id="interventionOverrideNoteField">
+          <span>Override Note</span>
+          <textarea
+            id="interventionOverrideNoteInput"
+            rows="3"
+            placeholder="Required if manual XP exceeds the student's allowable daily cap."
+          ></textarea>
+        </label>
 
         <div class="modal-grid">
           <label class="field">
@@ -739,6 +871,40 @@
 
     <script src="./vendor/sql-wasm.js"></script>
     <script src="./config.js"></script>
+    <script>
+      window.soarFallbackTeacherLogin = function (event) {
+        if (event) {
+          event.preventDefault();
+        }
+
+        const input = document.getElementById("accessCodeInput");
+        const status = document.getElementById("loginStatus");
+        const submittedCode = String(input?.value || "").trim().toUpperCase();
+        const expectedCode = String(window.SOAR_CONFIG?.accessCode || "SOAR")
+          .trim()
+          .toUpperCase();
+
+        if (submittedCode !== expectedCode) {
+          if (status) {
+            status.textContent = "Incorrect access code. Please try again.";
+            status.style.color = "var(--danger)";
+          }
+          return false;
+        }
+
+        localStorage.setItem(
+          "soar-tracker-session",
+          JSON.stringify({
+            role: "teacher",
+            displayName: "Teacher Access",
+            username: "",
+            guideId: null,
+          }),
+        );
+        window.location.reload();
+        return false;
+      };
+    </script>
     <script type="module" src="./app.js"></script>
   </body>
 </html>

@@ -258,6 +258,18 @@ textarea {
   padding: 22px;
 }
 
+.profile-header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.profile-status-field {
+  min-width: 150px;
+}
+
 .filter-grid,
 .modal-grid,
 .date-range-grid,
@@ -273,6 +285,11 @@ textarea {
   display: grid;
   gap: 8px;
   min-width: 0;
+}
+
+.filter-toggle {
+  align-content: end;
+  justify-items: start;
 }
 
 .field span,
@@ -786,6 +803,10 @@ code {
     justify-items: stretch;
   }
 
+  .profile-header-actions {
+    justify-content: flex-start;
+  }
+
   .topbar-actions,
   .quick-add-summary,
   .record-toolbar,
@@ -836,4 +857,160 @@ code {
   #adminOnlySettings .inline-form {
     grid-template-columns: 1fr;
   }
+}
+
+.warning-text {
+  color: var(--warning);
+  font-weight: 600;
+}
+
+.profile-config-form,
+.cap-summary-grid,
+.analytics-summary-grid {
+  display: grid;
+  gap: 12px;
+}
+
+.profile-config-form {
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  align-items: end;
+}
+
+.cap-summary-card {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--surface-soft);
+}
+
+.cap-summary-card p,
+.cap-summary-card strong {
+  margin: 0;
+}
+
+.cap-summary-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+
+.cap-summary-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.cap-summary-grid span {
+  display: block;
+  font-size: 0.82rem;
+}
+
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  border: 1px solid transparent;
+}
+
+.status-pill-blue,
+.cap-status-blue {
+  background: #e7f1ff;
+  border-color: #bfd7f5;
+  color: #1d4f91;
+}
+
+.status-pill-yellow,
+.cap-status-yellow {
+  background: #fff7df;
+  border-color: #f1d38e;
+  color: #8a6111;
+}
+
+.status-pill-red,
+.cap-status-red {
+  background: #fde9e7;
+  border-color: #efb2ad;
+  color: #a3332c;
+}
+
+.status-pill-pink,
+.cap-status-pink {
+  background: #ffe4ef;
+  border-color: #f0b4cb;
+  color: #b22f71;
+}
+
+.analytics-summary-grid {
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.analytics-flags {
+  display: grid;
+  gap: 8px;
+}
+
+.heat-map-wrap {
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+
+.heat-map-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 780px;
+}
+
+.heat-map-table th,
+.heat-map-table td {
+  padding: 10px;
+  border-bottom: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+  text-align: center;
+  vertical-align: middle;
+}
+
+.heat-map-table th:first-child {
+  min-width: 220px;
+  text-align: left;
+  background: var(--surface-soft);
+  position: sticky;
+  left: 0;
+  z-index: 1;
+}
+
+.heat-map-table thead th {
+  position: sticky;
+  top: 0;
+  background: var(--surface-soft);
+  z-index: 2;
+}
+
+.heat-map-cell strong {
+  font-size: 0.95rem;
+}
+
+.heat-empty {
+  background: #f8fafc;
+}
+
+.heat-blue {
+  background: #dceefe;
+}
+
+.heat-yellow {
+  background: #fff0bd;
+}
+
+.heat-red {
+  background: #f9c6c1;
+}
+
+.heat-pink {
+  background: #f9c6df;
 }

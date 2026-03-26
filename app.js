@@ -3,6 +3,26 @@ import { createDataService } from "./data-service.js";
 const SESSION_KEY = "soar-tracker-session";
 const DEFAULT_ACCESS_CODE = "SOAR";
 const DEFAULT_ADMIN_USERNAME = "admin";
+const DAILY_AVERAGE_GOAL_OPTIONS = [50, 60, 70, 80, 90, 100, 110, 120, 130, 140, 150];
+const DAILY_AVERAGE_GOAL_BANDS = [
+  { value: "all", label: "All Goals" },
+  { value: "50-80", label: "50-80" },
+  { value: "90-120", label: "90-120" },
+  { value: "130-150", label: "130-150" },
+];
+const SOAR_CAP_PERCENTAGES = {
+  1: 0.4,
+  2: 0.3,
+  3: 0.2,
+  4: 0.1,
+  5: 0.05,
+  6: 0,
+};
+const SOAR_BLOCK_CAPS = {
+  math: 15,
+  reading: 20,
+  language: 13,
+};
 
 const config = {
   accessCode: DEFAULT_ACCESS_CODE,
@@ -78,6 +98,59 @@ const QUICK_ADD_APP_PREFERENCES = {
   "focus group": ["Focus Group"],
   other: ["Other"],
 };
+const QUICK_ADD_INTERVENTION_CAP_KEYS = {
+  "Math Vocabulary": "mathVocabulary",
+  Comprehension: "mathVocabulary",
+  "Writing Board": "writingBoards",
+  "Problem Deconstruction": "writingBoards",
+  Translanguaging: "translanguaging",
+  Notes: "flashcardsNotes",
+  TPR: "tpr",
+  "Choral Repetition": "choralReading",
+  "Mini-Mission Tier 1: Identify or Label": "miniTier1",
+  "Mini-Mission Tier 2: Apply or Represent": "miniTier2",
+  "Mini-Mission Tier 3: Analyze or Explain": "miniTier3",
+  Worksheet: "focusOther",
+  Game: "focusOther",
+  Kinestics: "focusOther",
+  Audio: "focusOther",
+  Reading: "focusOther",
+  "Task Cards": "focusOther",
+  Other: "focusOther",
+};
+const APP_INTERVENTION_CAPS = {
+  math: {
+    mathVocabulary: 4,
+    writingBoards: 4,
+    translanguaging: 2,
+    miniTier1: 2,
+    miniTier2: 4,
+    miniTier3: 6,
+    miniTotal: 8,
+    hard: 15,
+  },
+  language: {
+    tpr: 4,
+    flashcardsNotes: 4,
+    writingBoards: 4,
+    choralReading: 3,
+    miniTier1: 2,
+    miniTier2: 4,
+    miniTier3: 6,
+    miniTotal: 6,
+    hard: 13,
+  },
+  reading: {
+    tpr: 3,
+    writingBoards: 4,
+    choralReading: 3,
+    miniTier1: 2,
+    miniTier2: 4,
+    miniTier3: 3,
+    miniTotal: 7,
+    hard: 20,
+  },
+};
 
 function createQuickAddState() {
   return {
@@ -121,6 +194,15 @@ const state = {
   filters: {
     search: "",
     band: "all",
+    includeInactive: false,
+  },
+  analytics: {
+    studentId: "",
+    startDate: toIsoDate(addDays(new Date(), -6)),
+    endDate: toIsoDate(new Date()),
+    areaApp: "all",
+    level: "all",
+    goalBand: "all",
   },
   selectedStudentId: null,
   assignmentStudentId: null,
@@ -144,6 +226,7 @@ const dom = {
   homeButton: document.querySelector("#homeButton"),
   studentsButton: document.querySelector("#studentsButton"),
   settingsButton: document.querySelector("#settingsButton"),
+  analyticsButton: document.querySelector("#analyticsButton"),
   exportButton: document.querySelector("#exportButton"),
   logoutButton: document.querySelector("#logoutButton"),
   sessionChip: document.querySelector("#sessionChip"),
@@ -151,6 +234,7 @@ const dom = {
   studentsScreen: document.querySelector("#studentsScreen"),
   studentProfileScreen: document.querySelector("#studentProfileScreen"),
   settingsScreen: document.querySelector("#settingsScreen"),
+  analyticsScreen: document.querySelector("#analyticsScreen"),
   exportScreen: document.querySelector("#exportScreen"),
   openSettingsFromQuickAddButton: document.querySelector("#openSettingsFromQuickAddButton"),
   openAddStudentButton: document.querySelector("#openAddStudentButton"),
@@ -175,10 +259,13 @@ const dom = {
   saveQuickAddButton: document.querySelector("#saveQuickAddButton"),
   studentSearchInput: document.querySelector("#studentSearchInput"),
   bandFilterSelect: document.querySelector("#bandFilterSelect"),
+  inactiveFilterInput: document.querySelector("#inactiveFilterInput"),
   studentGrid: document.querySelector("#studentGrid"),
   backToHomeButton: document.querySelector("#backToHomeButton"),
   studentProfileName: document.querySelector("#studentProfileName"),
   studentProfileSummary: document.querySelector("#studentProfileSummary"),
+  studentStatusSelect: document.querySelector("#studentStatusSelect"),
+  studentStatusMessage: document.querySelector("#studentStatusMessage"),
   studentOverviewCard: document.querySelector("#studentOverviewCard"),
   openAddInterventionButton: document.querySelector("#openAddInterventionButton"),
   previousWeekButton: document.querySelector("#previousWeekButton"),
@@ -192,6 +279,8 @@ const dom = {
   studentBandInput: document.querySelector("#studentBandInput"),
   studentGradeBandInput: document.querySelector("#studentGradeBandInput"),
   studentWidaInput: document.querySelector("#studentWidaInput"),
+  studentAllotmentLevelInput: document.querySelector("#studentAllotmentLevelInput"),
+  studentDailyAverageGoalInput: document.querySelector("#studentDailyAverageGoalInput"),
   studentActiveInput: document.querySelector("#studentActiveInput"),
   interventionModal: document.querySelector("#interventionModal"),
   interventionForm: document.querySelector("#interventionForm"),
@@ -205,6 +294,10 @@ const dom = {
   interventionXpInput: document.querySelector("#interventionXpInput"),
   interventionNotesInput: document.querySelector("#interventionNotesInput"),
   interventionEvidenceInput: document.querySelector("#interventionEvidenceInput"),
+  interventionCapSummary: document.querySelector("#interventionCapSummary"),
+  interventionCapWarning: document.querySelector("#interventionCapWarning"),
+  interventionOverrideNoteField: document.querySelector("#interventionOverrideNoteField"),
+  interventionOverrideNoteInput: document.querySelector("#interventionOverrideNoteInput"),
   interventionRepeatedInput: document.querySelector("#interventionRepeatedInput"),
   interventionNewContextInput: document.querySelector("#interventionNewContextInput"),
   newContextNoteField: document.querySelector("#newContextNoteField"),
@@ -250,6 +343,15 @@ const dom = {
   exportEndDateInput: document.querySelector("#exportEndDateInput"),
   exportFormatSelect: document.querySelector("#exportFormatSelect"),
   exportStatus: document.querySelector("#exportStatus"),
+  analyticsFilterForm: document.querySelector("#analyticsFilterForm"),
+  analyticsStudentSelect: document.querySelector("#analyticsStudentSelect"),
+  analyticsStartDateInput: document.querySelector("#analyticsStartDateInput"),
+  analyticsEndDateInput: document.querySelector("#analyticsEndDateInput"),
+  analyticsAreaAppFilter: document.querySelector("#analyticsAreaAppFilter"),
+  analyticsLevelFilter: document.querySelector("#analyticsLevelFilter"),
+  analyticsGoalBandFilter: document.querySelector("#analyticsGoalBandFilter"),
+  analyticsHeatMap: document.querySelector("#analyticsHeatMap"),
+  analyticsSummary: document.querySelector("#analyticsSummary"),
 };
 
 document.addEventListener("DOMContentLoaded", init);
@@ -291,6 +393,7 @@ function bindEvents() {
   dom.homeButton.addEventListener("click", () => switchScreen("home"));
   dom.studentsButton.addEventListener("click", () => switchScreen("students"));
   dom.settingsButton.addEventListener("click", () => switchScreen("settings"));
+  dom.analyticsButton.addEventListener("click", () => switchScreen("analytics"));
   dom.exportButton.addEventListener("click", () => switchScreen("export"));
   dom.logoutButton.addEventListener("click", handleLogout);
   dom.openSettingsFromQuickAddButton.addEventListener("click", () => switchScreen("settings"));
@@ -334,8 +437,14 @@ function bindEvents() {
     state.filters.band = dom.bandFilterSelect.value;
     renderStudents();
   });
+  dom.inactiveFilterInput.addEventListener("change", () => {
+    state.filters.includeInactive = dom.inactiveFilterInput.checked;
+    renderStudents();
+  });
   dom.studentGrid.addEventListener("click", handleStudentGridClick);
   dom.backToHomeButton.addEventListener("click", () => switchScreen("students"));
+  dom.studentStatusSelect.addEventListener("change", handleStudentStatusChange);
+  dom.studentOverviewCard.addEventListener("submit", handleStudentProfileConfigSubmit);
   dom.openAddInterventionButton.addEventListener("click", openInterventionModalForSelectedStudent);
   dom.previousWeekButton.addEventListener("click", () => {
     state.selectedWeekStart = addDays(state.selectedWeekStart, -7);
@@ -351,6 +460,12 @@ function bindEvents() {
   dom.interventionForm.addEventListener("submit", handleInterventionSubmit);
   dom.interventionContentAreaInput.addEventListener("change", updateInterventionAppOptions);
   dom.interventionStudentInput.addEventListener("change", updateInterventionAppOptions);
+  dom.interventionStudentInput.addEventListener("change", updateInterventionCapSummary);
+  dom.interventionDateInput.addEventListener("change", updateInterventionCapSummary);
+  dom.interventionContentAreaInput.addEventListener("change", updateInterventionCapSummary);
+  dom.interventionXpInput.addEventListener("input", updateInterventionCapSummary);
+  dom.interventionCategoryInput.addEventListener("input", updateInterventionCapSummary);
+  dom.interventionOverrideNoteInput.addEventListener("input", updateInterventionCapSummary);
   dom.interventionRepeatedInput.addEventListener("change", syncNewContextField);
   dom.adminPasswordForm.addEventListener("submit", handleAdminPasswordSubmit);
   dom.guideForm.addEventListener("submit", handleGuideSubmit);
@@ -370,6 +485,7 @@ function bindEvents() {
   dom.exportScopeSelect.addEventListener("change", syncExportFields);
   dom.exportRangeTypeSelect.addEventListener("change", syncExportFields);
   dom.exportForm.addEventListener("submit", handleExportSubmit);
+  dom.analyticsFilterForm.addEventListener("change", handleAnalyticsFilterChange);
 
   document.querySelectorAll("[data-close-modal]").forEach((button) => {
     button.addEventListener("click", () => {
@@ -501,11 +617,20 @@ async function refreshData() {
 }
 
 function renderAll() {
-  renderHome();
-  renderStudents();
-  renderStudentProfile();
-  renderSettings();
-  renderExportOptions();
+  safeRender("home", renderHome);
+  safeRender("students", renderStudents);
+  safeRender("student profile", renderStudentProfile);
+  safeRender("settings", renderSettings);
+  safeRender("analytics", renderAnalytics);
+  safeRender("export", renderExportOptions);
+}
+
+function safeRender(label, renderFn) {
+  try {
+    renderFn();
+  } catch (error) {
+    console.error(`Unable to render ${label}.`, error);
+  }
 }
 
 function renderHome() {
@@ -516,12 +641,16 @@ function renderStudents() {
   const today = toIsoDate(new Date());
   const currentWeekStart = getStartOfWeek(new Date());
   const currentWeekEnd = addDays(currentWeekStart, 6);
-  const students = getActiveStudents().filter((student) => {
-    const matchesSearch = student.name.toLowerCase().includes(state.filters.search);
-    const matchesBand =
-      state.filters.band === "all" || student.band === state.filters.band;
-    return matchesSearch && matchesBand;
-  });
+  dom.inactiveFilterInput.checked = state.filters.includeInactive;
+  const students = [...state.data.students]
+    .filter((student) => state.filters.includeInactive || student.active)
+    .sort((left, right) => left.name.localeCompare(right.name))
+    .filter((student) => {
+      const matchesSearch = student.name.toLowerCase().includes(state.filters.search);
+      const matchesBand =
+        state.filters.band === "all" || student.band === state.filters.band;
+      return matchesSearch && matchesBand;
+    });
 
   dom.studentGrid.innerHTML = students.length
     ? students
@@ -533,6 +662,7 @@ function renderStudents() {
               isDateWithinRange(item.date, toIsoDate(currentWeekStart), toIsoDate(currentWeekEnd)),
             ),
           );
+          const manualSnapshot = buildStudentManualXpSnapshot(student, today);
 
           return `
             <article class="student-tile card">
@@ -541,11 +671,12 @@ function renderStudents() {
                   <p class="eyebrow">Student</p>
                   <h3>${escapeHtml(student.name)}</h3>
                 </div>
-                <span class="inline-badge">WIDA ${escapeHtml(String(student.widaLevel))}</span>
+                <span class="inline-badge">${student.active ? `WIDA ${escapeHtml(String(student.widaLevel))}` : "Archived"}</span>
               </div>
               <div class="student-meta">
                 <span class="meta-pill">${escapeHtml(student.band)}</span>
                 <span class="meta-pill">${escapeHtml(student.gradeBand)}</span>
+                ${student.active ? "" : `<span class="meta-pill">Inactive</span>`}
               </div>
               <div class="metric-grid">
                 <div class="metric-card">
@@ -559,6 +690,7 @@ function renderStudents() {
                   <span class="metric-subtle">XP total</span>
                 </div>
               </div>
+              ${renderCapSummaryMarkup(manualSnapshot)}
               <button
                 class="button button-primary"
                 type="button"
@@ -573,7 +705,7 @@ function renderStudents() {
         .join("")
     : `
         <div class="empty-state">
-          No students match the current search and band filter.
+          No students match the current search, band, and inactive filters.
         </div>
       `;
 }
@@ -735,10 +867,30 @@ function renderQuickAddStudentRows() {
   dom.quickAddStudentRows.innerHTML = selectedStudents.length
     ? selectedStudents
         .map((student) => {
-          const entry = state.quickAdd.studentEntries[student.id] || { notes: "", xp: "" };
+          const entry = state.quickAdd.studentEntries[student.id] || {
+            notes: "",
+            xp: "",
+            overrideNote: "",
+          };
           const todayTotal = sumXp(
             getStudentInterventions(student.id).filter((item) => item.date === toIsoDate(new Date())),
           );
+          const interventionName = resolveQuickAddInterventionName();
+          const proposedXp = String(entry.xp ?? "").trim() ? Number.parseInt(entry.xp, 10) : 2;
+          const assessment =
+            state.quickAdd.locked
+            && state.quickAdd.date
+            && state.quickAdd.contentAreaId
+            && interventionName
+              ? buildManualXpEntryAssessment({
+                  student,
+                  date: state.quickAdd.date,
+                  contentAreaId: state.quickAdd.contentAreaId,
+                  interventionCategory: interventionName,
+                  proposedXp,
+                })
+              : null;
+
           return `
             <article class="quick-entry-row">
               <div class="quick-entry-row-header">
@@ -774,6 +926,40 @@ function renderQuickAddStudentRows() {
                   />
                 </label>
               </div>
+              ${
+                assessment
+                  ? `
+                    ${renderCapSummaryMarkup(
+                      {
+                        used: assessment.projectedUsed,
+                        cap: assessment.dailyCap,
+                        percentUsed: assessment.percentUsed,
+                        color: assessment.color,
+                        remaining: assessment.remaining,
+                        selectedGoal: assessment.selectedGoal,
+                      },
+                      "manual XP",
+                    )}
+                    ${
+                      assessment.messages.length
+                        ? `<p class="status-line ${assessment.isHardWarning ? "warning-text" : ""}">${escapeHtml(
+                            assessment.messages[0],
+                          )}</p>`
+                        : ""
+                    }
+                    <label class="field ${assessment.requiresOverride ? "" : "hidden"}">
+                      <span>Override Note</span>
+                      <textarea
+                        rows="2"
+                        data-student-id="${escapeHtml(student.id)}"
+                        data-field="overrideNote"
+                        placeholder="Explain why this entry should go over the allotment"
+                        ${state.quickAdd.locked ? "" : "disabled"}
+                      >${escapeHtml(entry.overrideNote || "")}</textarea>
+                    </label>
+                  `
+                  : ""
+              }
             </article>
           `;
         })
@@ -781,11 +967,14 @@ function renderQuickAddStudentRows() {
     : `<div class="empty-state">Add students to create quick intervention entries.</div>`;
 }
 
-function renderStudentProfile() {
+function legacyRenderStudentProfile1() {
   const student = getStudentById(state.selectedStudentId);
   if (!student) {
     dom.studentProfileName.textContent = "Student Profile";
     dom.studentProfileSummary.textContent = "Select a student from the home screen.";
+    dom.studentStatusSelect.value = "active";
+    dom.studentStatusSelect.disabled = true;
+    setStatus(dom.studentStatusMessage, "", "neutral");
     dom.studentOverviewCard.innerHTML = `<div class="empty-state">No student selected.</div>`;
     dom.dailyAccordion.innerHTML = "";
     return;
@@ -815,6 +1004,9 @@ function renderStudentProfile() {
   );
 
   dom.studentProfileName.textContent = student.name;
+  dom.studentStatusSelect.disabled = false;
+  dom.studentStatusSelect.value = student.active ? "active" : "inactive";
+  setStatus(dom.studentStatusMessage, "", "neutral");
   dom.studentProfileSummary.textContent = `${student.band} | ${student.gradeBand} | WIDA ${student.widaLevel}`;
   dom.studentProfileSummary.textContent = `${student.band} • ${student.gradeBand} • WIDA ${student.widaLevel}`;
   dom.studentProfileSummary.textContent = `${student.band} | ${student.gradeBand} | WIDA ${student.widaLevel}`;
@@ -906,7 +1098,7 @@ function renderStudentProfile() {
     .join("");
 }
 
-function renderInterventionCard(record, contentAreaMap, appMap) {
+function legacyRenderInterventionCard1(record, contentAreaMap, appMap) {
   const contentArea = contentAreaMap.get(record.contentAreaId)?.name || "Unknown";
   const app = appMap.get(record.appId)?.name || "Unknown";
 
@@ -962,6 +1154,1305 @@ function renderInterventionCard(record, contentAreaMap, appMap) {
       </div>
     </article>
   `;
+}
+
+function legacyBuildInterventionCapSummary1() {
+  const student = getStudentById(dom.interventionStudentInput.value);
+  if (!student || !dom.interventionDateInput.value || !dom.interventionContentAreaInput.value) {
+    return null;
+  }
+
+  const xpValue = String(dom.interventionXpInput.value || "").trim();
+  const proposedXp = xpValue ? Number.parseInt(xpValue, 10) : 0;
+  return buildManualXpEntryAssessment({
+    student,
+    date: dom.interventionDateInput.value,
+    contentAreaId: dom.interventionContentAreaInput.value,
+    interventionCategory: dom.interventionCategoryInput.value,
+    proposedXp,
+  });
+}
+
+function legacyUpdateInterventionCapSummary1() {
+  if (!dom.interventionCapSummary) {
+    return;
+  }
+
+  const assessment = buildInterventionCapSummary();
+  if (!assessment || !dom.interventionCategoryInput.value.trim()) {
+    dom.interventionCapSummary.innerHTML = `<div class="empty-inline">Choose a student, content area, intervention, and XP to preview the manual XP guardrails.</div>`;
+    dom.interventionCapWarning.textContent = "";
+    dom.interventionCapWarning.classList.remove("warning-text");
+    dom.interventionOverrideNoteField.classList.add("hidden");
+    dom.interventionOverrideNoteInput.required = false;
+    return;
+  }
+
+  dom.interventionCapSummary.innerHTML = renderCapSummaryMarkup(
+    {
+      used: assessment.projectedUsed,
+      cap: assessment.dailyCap,
+      percentUsed: assessment.percentUsed,
+      color: assessment.color,
+      remaining: assessment.remaining,
+      selectedGoal: assessment.selectedGoal,
+    },
+    "manual XP",
+  );
+  dom.interventionCapWarning.textContent = assessment.messages[0] || "";
+  dom.interventionCapWarning.classList.toggle(
+    "warning-text",
+    assessment.isSoftWarning || assessment.isHardWarning,
+  );
+  dom.interventionOverrideNoteField.classList.toggle("hidden", !assessment.requiresOverride);
+  dom.interventionOverrideNoteInput.required = assessment.requiresOverride;
+}
+
+function legacyOpenInterventionModal1(studentId = null) {
+  dom.interventionForm.reset();
+  populateStudentOptions(studentId);
+  populateContentAreaOptions();
+  dom.interventionDateInput.value = toIsoDate(new Date());
+  dom.interventionTeacherInput.value = getDefaultTeacherName();
+  dom.interventionRepeatedInput.value = "false";
+  dom.interventionOverrideNoteInput.value = "";
+  syncNewContextField();
+  updateInterventionAppOptions();
+  updateInterventionCapSummary();
+  dom.interventionModal.showModal();
+}
+
+async function legacyHandleInterventionSubmit1(event) {
+  event.preventDefault();
+
+  const assessment = buildInterventionCapSummary();
+  if (assessment?.isHardWarning && assessment.color === "red") {
+    const shouldContinue = window.confirm(
+      `This entry will place the student exactly at their daily manual XP allotment of ${assessment.dailyCap}. Continue?`,
+    );
+    if (!shouldContinue) {
+      return;
+    }
+  }
+
+  if (assessment && assessment.requiresOverride && !dom.interventionOverrideNoteInput.value.trim()) {
+    dom.interventionOverrideNoteInput.focus();
+    window.alert("Add an override note before saving an over-cap manual XP entry.");
+    return;
+  }
+
+  if (
+    assessment
+    && (
+      (assessment.blockCap !== null && assessment.projectedBlockUsed > assessment.blockCap)
+      || (assessment.categoryCap !== null && assessment.projectedCategoryUsed > assessment.categoryCap)
+      || (
+        assessment.miniTotalCap !== null
+        && assessment.projectedMiniTotalUsed > assessment.miniTotalCap
+      )
+    )
+  ) {
+    window.alert(assessment.messages[assessment.messages.length - 1] || "This entry exceeds a subject-level cap.");
+    return;
+  }
+
+  try {
+    await state.service.saveIntervention({
+      studentId: dom.interventionStudentInput.value,
+      date: dom.interventionDateInput.value,
+      timestamp: new Date().toISOString(),
+      teacherName: dom.interventionTeacherInput.value,
+      contentAreaId: dom.interventionContentAreaInput.value,
+      appId: dom.interventionAppInput.value,
+      interventionCategory: dom.interventionCategoryInput.value,
+      taskDetail: dom.interventionTaskDetailInput.value,
+      xpAwarded: Number(dom.interventionXpInput.value),
+      notes: dom.interventionNotesInput.value,
+      evidenceOfProduction: dom.interventionEvidenceInput.value,
+      repeatedInNewContext: dom.interventionRepeatedInput.value === "true",
+      newContextNote: dom.interventionNewContextInput.value,
+      overrideNote: dom.interventionOverrideNoteInput.value.trim(),
+    });
+
+    state.selectedStudentId = dom.interventionStudentInput.value;
+    dom.interventionModal.close();
+    await refreshData();
+    switchScreen("student");
+  } catch (error) {
+    console.error(error);
+    window.alert(`Unable to save intervention.\n\n${readableError(error)}`);
+  }
+}
+
+function legacyHandleQuickAddStudentRowsInput1(event) {
+  const field = event.target.getAttribute("data-field");
+  const studentId = event.target.getAttribute("data-student-id");
+  if (!field || !studentId) {
+    return;
+  }
+
+  const current = state.quickAdd.studentEntries[studentId] || {
+    notes: "",
+    xp: "",
+    overrideNote: "",
+  };
+  state.quickAdd.studentEntries[studentId] = {
+    ...current,
+    [field]: event.target.value,
+  };
+  clearQuickAddStatus();
+  renderQuickAddStudentRows();
+}
+
+async function legacyHandleQuickAddSave1() {
+  const interventionName = resolveQuickAddInterventionName();
+
+  if (!state.quickAdd.locked) {
+    setQuickAddStatus("Lock the setup before saving entries.", "error");
+    return;
+  }
+
+  if (!state.quickAdd.teacherName.trim()) {
+    setQuickAddStatus("Teacher name is required.", "error");
+    return;
+  }
+
+  if (!state.quickAdd.date) {
+    setQuickAddStatus("Choose a valid date before saving.", "error");
+    return;
+  }
+
+  if (!state.quickAdd.contentAreaId || !state.quickAdd.appId) {
+    setQuickAddStatus("Choose a content area and app before saving.", "error");
+    return;
+  }
+
+  if (!state.quickAdd.selectedStudentIds.length) {
+    setQuickAddStatus("Add at least one student before saving.", "error");
+    return;
+  }
+
+  if (!interventionName) {
+    setQuickAddStatus("Choose an intervention before saving.", "error");
+    return;
+  }
+
+  const timestamp = new Date().toISOString();
+  const entries = [];
+
+  for (const studentId of state.quickAdd.selectedStudentIds) {
+    const student = getStudentById(studentId);
+    const studentEntry = state.quickAdd.studentEntries[studentId] || {
+      notes: "",
+      xp: "",
+      overrideNote: "",
+    };
+    const rawXp = String(studentEntry.xp ?? "").trim();
+    const parsedXp = rawXp ? Number.parseInt(rawXp, 10) : 2;
+    const xpAwarded = Number.isFinite(parsedXp) ? parsedXp : 2;
+    const assessment = buildManualXpEntryAssessment({
+      student,
+      date: state.quickAdd.date,
+      contentAreaId: state.quickAdd.contentAreaId,
+      interventionCategory: interventionName,
+      proposedXp: xpAwarded,
+    });
+
+    if (
+      (assessment.blockCap !== null && assessment.projectedBlockUsed > assessment.blockCap)
+      || (assessment.categoryCap !== null && assessment.projectedCategoryUsed > assessment.categoryCap)
+      || (
+        assessment.miniTotalCap !== null
+        && assessment.projectedMiniTotalUsed > assessment.miniTotalCap
+      )
+    ) {
+      setQuickAddStatus(
+        `${student.name}: ${assessment.messages[assessment.messages.length - 1] || "This entry exceeds a subject-level cap."}`,
+        "error",
+      );
+      return;
+    }
+
+    if (assessment.color === "pink" && !String(studentEntry.overrideNote || "").trim()) {
+      setQuickAddStatus(`${student.name}: add an override note for over-cap manual XP.`, "error");
+      renderQuickAddStudentRows();
+      return;
+    }
+
+    if (assessment.color === "red") {
+      const shouldContinue = window.confirm(
+        `${student.name} will land exactly at the daily manual XP cap of ${assessment.dailyCap}. Continue?`,
+      );
+      if (!shouldContinue) {
+        return;
+      }
+    }
+
+    const notes = String(studentEntry.notes ?? "").trim();
+    entries.push({
+      studentId,
+      date: state.quickAdd.date,
+      timestamp,
+      teacherName: state.quickAdd.teacherName,
+      contentAreaId: state.quickAdd.contentAreaId,
+      appId: state.quickAdd.appId,
+      interventionCategory: interventionName,
+      taskDetail: interventionName,
+      xpAwarded,
+      notes,
+      evidenceOfProduction: notes || interventionName,
+      repeatedInNewContext: false,
+      newContextNote: "",
+      overrideNote: String(studentEntry.overrideNote || "").trim(),
+    });
+  }
+
+  try {
+    if (typeof state.service.saveInterventions === "function") {
+      await state.service.saveInterventions(entries);
+    } else {
+      for (const entry of entries) {
+        await state.service.saveIntervention(entry);
+      }
+    }
+
+    state.selectedStudentId = state.quickAdd.selectedStudentIds[0] || state.selectedStudentId;
+    const teacherName = state.quickAdd.teacherName;
+    const teacherOption = state.quickAdd.teacherOption;
+    const teacherOtherName = state.quickAdd.teacherOtherName;
+    const date = state.quickAdd.date;
+    const contentAreaId = state.quickAdd.contentAreaId;
+    const appId = state.quickAdd.appId;
+
+    resetQuickAddState(true);
+    state.quickAdd.teacherName = teacherName;
+    state.quickAdd.teacherOption = teacherOption;
+    state.quickAdd.teacherOtherName = teacherOtherName;
+    state.quickAdd.date = date;
+    state.quickAdd.contentAreaId = contentAreaId;
+    state.quickAdd.appId = appId;
+    state.quickAdd.statusMessage = `${entries.length} intervention entr${
+      entries.length === 1 ? "y" : "ies"
+    } saved.`;
+    state.quickAdd.statusTone = "success";
+
+    await refreshData();
+    switchScreen("home");
+  } catch (error) {
+    console.error(error);
+    setQuickAddStatus(`Unable to save quick entries. ${readableError(error)}`, "error");
+    renderQuickAdd();
+  }
+}
+
+function legacyAddQuickAddStudent1(studentId) {
+  if (!studentId || state.quickAdd.locked) {
+    return;
+  }
+
+  if (!state.quickAdd.selectedStudentIds.includes(studentId)) {
+    state.quickAdd.selectedStudentIds = [...state.quickAdd.selectedStudentIds, studentId];
+  }
+
+  state.quickAdd.studentEntries[studentId] = state.quickAdd.studentEntries[studentId] || {
+    notes: "",
+    xp: "",
+    overrideNote: "",
+  };
+  state.quickAdd.studentQuery = "";
+  state.quickAdd.intervention = "";
+  state.quickAdd.customIntervention = "";
+  clearQuickAddStatus();
+  renderQuickAdd();
+  dom.quickAddStudentSearchInput.focus();
+}
+
+function legacySyncQuickAddState1() {
+  syncQuickAddTeacherDefault();
+  const validStudentIds = new Set(getActiveStudents().map((student) => student.id));
+  state.quickAdd.selectedStudentIds = state.quickAdd.selectedStudentIds.filter((studentId) =>
+    validStudentIds.has(studentId),
+  );
+
+  state.quickAdd.studentEntries = Object.fromEntries(
+    state.quickAdd.selectedStudentIds.map((studentId) => [
+      studentId,
+      {
+        notes: state.quickAdd.studentEntries[studentId]?.notes || "",
+        xp: state.quickAdd.studentEntries[studentId]?.xp || "",
+        overrideNote: state.quickAdd.studentEntries[studentId]?.overrideNote || "",
+      },
+    ]),
+  );
+
+  const contentAreas = getQuickAddContentAreas();
+  if (!contentAreas.some((contentArea) => contentArea.id === state.quickAdd.contentAreaId)) {
+    state.quickAdd.contentAreaId = contentAreas[0]?.id || "";
+  }
+
+  const appOptions = getQuickAddAppOptions(
+    state.quickAdd.contentAreaId,
+    state.quickAdd.selectedStudentIds,
+  );
+  if (!appOptions.some((app) => app.id === state.quickAdd.appId)) {
+    state.quickAdd.appId = appOptions[0]?.id || "";
+  }
+
+  const interventions = getQuickAddInterventionOptions(state.quickAdd.contentAreaId);
+  const validInterventions = new Set([...interventions, QUICK_ADD_CUSTOM_VALUE]);
+  if (!validInterventions.has(state.quickAdd.intervention)) {
+    state.quickAdd.intervention = interventions.length ? "" : QUICK_ADD_CUSTOM_VALUE;
+  }
+
+  if (!state.quickAdd.selectedStudentIds.length) {
+    state.quickAdd.locked = false;
+  }
+}
+
+function legacyRenderAnalytics1() {
+  if (!dom.analyticsScreen) {
+    return;
+  }
+
+  const students = [...state.data.students].sort((left, right) => left.name.localeCompare(right.name));
+  const activeApps = state.data.apps.filter((app) => app.active);
+
+  dom.analyticsStudentSelect.innerHTML = [
+    `<option value="">All Students</option>`,
+    ...students.map(
+      (student) => `<option value="${escapeHtml(student.id)}">${escapeHtml(student.name)}</option>`,
+    ),
+  ].join("");
+  dom.analyticsStudentSelect.value = state.analytics.studentId;
+
+  dom.analyticsAreaAppFilter.innerHTML = [
+    `<option value="all">All Content Areas and Apps</option>`,
+    ...state.data.contentAreas
+      .filter((contentArea) => contentArea.active)
+      .sort((left, right) => left.name.localeCompare(right.name))
+      .map(
+        (contentArea) =>
+          `<option value="content:${escapeHtml(contentArea.id)}">${escapeHtml(contentArea.name)}</option>`,
+      ),
+    ...activeApps
+      .sort((left, right) => left.name.localeCompare(right.name))
+      .map(
+        (app) =>
+          `<option value="app:${escapeHtml(app.id)}">${escapeHtml(
+            `${getContentAreaById(app.contentAreaId)?.name || "Other"} | ${app.name}`,
+          )}</option>`,
+      ),
+  ].join("");
+  dom.analyticsAreaAppFilter.value = state.analytics.areaApp;
+
+  dom.analyticsLevelFilter.innerHTML = [
+    `<option value="all">All SOAR Levels</option>`,
+    ...[1, 2, 3, 4, 5, 6].map((level) => `<option value="${level}">Level ${level}</option>`),
+  ].join("");
+  dom.analyticsLevelFilter.value = String(state.analytics.level);
+
+  dom.analyticsGoalBandFilter.innerHTML = DAILY_AVERAGE_GOAL_BANDS.map(
+    (band) => `<option value="${escapeHtml(band.value)}">${escapeHtml(band.label)}</option>`,
+  ).join("");
+  dom.analyticsGoalBandFilter.value = state.analytics.goalBand;
+  dom.analyticsStartDateInput.value = state.analytics.startDate;
+  dom.analyticsEndDateInput.value = state.analytics.endDate;
+
+  const startDate = new Date(state.analytics.startDate);
+  const endDate = new Date(state.analytics.endDate);
+  if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime()) || startDate > endDate) {
+    dom.analyticsSummary.innerHTML = `<div class="empty-state">Choose a valid analytics date range.</div>`;
+    dom.analyticsHeatMap.innerHTML = "";
+    return;
+  }
+
+  const filteredStudents = students.filter((student) => {
+    if (state.analytics.studentId && student.id !== state.analytics.studentId) {
+      return false;
+    }
+    if (state.analytics.level !== "all" && getStudentAllotmentLevel(student) !== Number(state.analytics.level)) {
+      return false;
+    }
+    if (
+      state.analytics.goalBand !== "all"
+      && getGoalBandValue(getStudentDailyAverageGoal(student)) !== state.analytics.goalBand
+    ) {
+      return false;
+    }
+    return true;
+  });
+  const allowedStudentIds = new Set(filteredStudents.map((student) => student.id));
+  const filteredRecords = state.data.interventions.filter((record) => {
+    if (!allowedStudentIds.has(record.studentId)) {
+      return false;
+    }
+    if (!isDateWithinRange(record.date, state.analytics.startDate, state.analytics.endDate)) {
+      return false;
+    }
+    if (state.analytics.areaApp.startsWith("content:")) {
+      return record.contentAreaId === state.analytics.areaApp.replace("content:", "");
+    }
+    if (state.analytics.areaApp.startsWith("app:")) {
+      return record.appId === state.analytics.areaApp.replace("app:", "");
+    }
+    return true;
+  });
+
+  const dates = [];
+  for (let cursor = new Date(startDate); cursor <= endDate; cursor = addDays(cursor, 1)) {
+    dates.push(toIsoDate(cursor));
+  }
+
+  const rows = [];
+  const rowSeen = new Set();
+  filteredRecords.forEach((record) => {
+    const app = getAppById(record.appId);
+    const contentArea = getContentAreaById(record.contentAreaId);
+    const rowKey = app ? `app:${app.id}` : `content:${record.contentAreaId}`;
+    if (rowSeen.has(rowKey)) {
+      return;
+    }
+    rowSeen.add(rowKey);
+    rows.push({
+      key: rowKey,
+      label: app ? `${contentArea?.name || "Other"} | ${app.name}` : contentArea?.name || "Other",
+    });
+  });
+  rows.sort((left, right) => left.label.localeCompare(right.label));
+
+  const totalsByRow = new Map();
+  const totalsByIntervention = new Map();
+  const overCapDays = new Set();
+  let totalXp = 0;
+
+  filteredRecords.forEach((record) => {
+    const rowLabel = rows.find((row) =>
+      row.key.startsWith("app:")
+        ? row.key === `app:${record.appId}`
+        : row.key === `content:${record.contentAreaId}`,
+    )?.label || "Other";
+    totalsByRow.set(rowLabel, (totalsByRow.get(rowLabel) || 0) + Number(record.xpAwarded || 0));
+    totalsByIntervention.set(
+      record.interventionCategory,
+      (totalsByIntervention.get(record.interventionCategory) || 0) + Number(record.xpAwarded || 0),
+    );
+    totalXp += Number(record.xpAwarded || 0);
+
+    const student = getStudentById(record.studentId);
+    if (student) {
+      const snapshot = buildStudentManualXpSnapshot(student, record.date);
+      if (snapshot.used > snapshot.cap) {
+        overCapDays.add(`${student.id}:${record.date}`);
+      }
+    }
+  });
+
+  const topRow = [...totalsByRow.entries()].sort((left, right) => right[1] - left[1])[0] || null;
+  const topIntervention =
+    [...totalsByIntervention.entries()].sort((left, right) => right[1] - left[1])[0] || null;
+
+  dom.analyticsSummary.innerHTML = `
+    <div class="analytics-summary-grid">
+      <article class="metric-card">
+        <span class="metric-label">Manual XP Logged</span>
+        <strong>${totalXp}</strong>
+        <span class="metric-subtle">${filteredRecords.length} intervention entries</span>
+      </article>
+      <article class="metric-card">
+        <span class="metric-label">Over-Cap Days</span>
+        <strong>${overCapDays.size}</strong>
+        <span class="metric-subtle">Days finished above the daily allotment</span>
+      </article>
+      <article class="metric-card">
+        <span class="metric-label">Top App / Area</span>
+        <strong>${escapeHtml(topRow?.[0] || "None")}</strong>
+        <span class="metric-subtle">${
+          topRow && totalXp ? `${Math.round((topRow[1] / totalXp) * 100)}% of manual XP` : "No data"
+        }</span>
+      </article>
+      <article class="metric-card">
+        <span class="metric-label">Top Intervention</span>
+        <strong>${escapeHtml(topIntervention?.[0] || "None")}</strong>
+        <span class="metric-subtle">${
+          topIntervention && totalXp
+            ? `${Math.round((topIntervention[1] / totalXp) * 100)}% of manual XP`
+            : "No data"
+        }</span>
+      </article>
+    </div>
+    <div class="analytics-flags">
+      <p class="status-line ${topRow && totalXp && topRow[1] / totalXp >= 0.6 ? "warning-text" : ""}">
+        ${
+          topRow && totalXp && topRow[1] / totalXp >= 0.6
+            ? `${escapeHtml(topRow[0])} is carrying most of the current manual XP load.`
+            : "Manual XP is spread across multiple apps and content areas."
+        }
+      </p>
+      <p class="status-line ${topIntervention && totalXp && topIntervention[1] / totalXp >= 0.6 ? "warning-text" : ""}">
+        ${
+          topIntervention && totalXp && topIntervention[1] / totalXp >= 0.6
+            ? `${escapeHtml(topIntervention[0])} is dominating the intervention mix.`
+            : "No single intervention type is dominating the current filter range."
+        }
+      </p>
+    </div>
+  `;
+
+  if (!rows.length || !dates.length) {
+    dom.analyticsHeatMap.innerHTML = `<div class="empty-state">No manual XP records match the selected filters.</div>`;
+    return;
+  }
+
+  dom.analyticsHeatMap.innerHTML = `
+    <div class="heat-map-wrap">
+      <table class="heat-map-table">
+        <thead>
+          <tr>
+            <th scope="col">App / Content</th>
+            ${dates.map((date) => `<th scope="col">${escapeHtml(formatShortDate(date))}</th>`).join("")}
+          </tr>
+        </thead>
+        <tbody>
+          ${rows
+            .map((row) => {
+              const cells = dates
+                .map((date) => {
+                  const cellRecords = filteredRecords.filter((record) => {
+                    const rowMatches = row.key.startsWith("app:")
+                      ? record.appId === row.key.replace("app:", "")
+                      : record.contentAreaId === row.key.replace("content:", "");
+                    return rowMatches && record.date === date;
+                  });
+                  const total = sumManualXp(cellRecords);
+                  const capTotal = [...new Set(cellRecords.map((record) => record.studentId))]
+                    .map((studentId) => getStudentById(studentId))
+                    .filter(Boolean)
+                    .reduce((sum, student) => sum + getStudentDailyManualCap(student), 0);
+                  const percent = capTotal > 0 ? Math.round((total / capTotal) * 100) : 0;
+                  const toneClass =
+                    percent > 100
+                      ? "heat-pink"
+                      : percent === 100
+                        ? "heat-red"
+                        : percent >= 80
+                          ? "heat-yellow"
+                          : total > 0
+                            ? "heat-blue"
+                            : "heat-empty";
+                  return `
+                    <td
+                      class="heat-map-cell ${toneClass}"
+                      title="${escapeHtml(`${row.label} on ${date}: ${total} XP (${percent}% of daily cap)`)}"
+                    >
+                      <strong>${total || ""}</strong>
+                    </td>
+                  `;
+                })
+                .join("");
+
+              return `
+                <tr>
+                  <th scope="row">${escapeHtml(row.label)}</th>
+                  ${cells}
+                </tr>
+              `;
+            })
+            .join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function legacyHandleAnalyticsFilterChange1() {
+  state.analytics.studentId = dom.analyticsStudentSelect.value;
+  state.analytics.startDate = dom.analyticsStartDateInput.value;
+  state.analytics.endDate = dom.analyticsEndDateInput.value;
+  state.analytics.areaApp = dom.analyticsAreaAppFilter.value;
+  state.analytics.level = dom.analyticsLevelFilter.value;
+  state.analytics.goalBand = dom.analyticsGoalBandFilter.value;
+  renderAnalytics();
+}
+
+function legacyGetPreviewConfig1() {
+  const params = new URLSearchParams(window.location.search);
+  const screen = params.get("preview");
+  if (!screen) {
+    return null;
+  }
+
+  const host = window.location.hostname;
+  if (!["", "localhost", "127.0.0.1"].includes(host)) {
+    return null;
+  }
+
+  const normalizedScreen = ["home", "students", "student", "settings", "export", "login", "analytics"].includes(screen)
+    ? screen
+    : "home";
+  const role = params.get("role") || (normalizedScreen === "settings" ? "admin" : "teacher");
+
+  return {
+    screen: normalizedScreen,
+    modal: params.get("modal") || "",
+    session:
+      role === "admin"
+        ? createSession("admin", "Admin", { username: DEFAULT_ADMIN_USERNAME })
+        : role === "guide"
+          ? createSession("guide", state.data.guideUsers[0]?.username || "guide-demo", {
+              username: state.data.guideUsers[0]?.username || "guide-demo",
+              guideId: state.data.guideUsers[0]?.id || null,
+            })
+          : createSession("teacher", "Teacher Access"),
+  };
+}
+
+function legacyBuildInterventionCapSummary2() {
+  const student = getStudentById(dom.interventionStudentInput.value);
+  if (!student || !dom.interventionDateInput.value || !dom.interventionContentAreaInput.value) {
+    return null;
+  }
+
+  const xpValue = String(dom.interventionXpInput.value || "").trim();
+  const proposedXp = xpValue ? Number.parseInt(xpValue, 10) : 0;
+  return buildManualXpEntryAssessment({
+    student,
+    date: dom.interventionDateInput.value,
+    contentAreaId: dom.interventionContentAreaInput.value,
+    interventionCategory: dom.interventionCategoryInput.value,
+    proposedXp,
+  });
+}
+
+function legacyUpdateInterventionCapSummary2() {
+  if (!dom.interventionCapSummary) {
+    return;
+  }
+
+  const assessment = buildInterventionCapSummary();
+  if (!assessment || !dom.interventionCategoryInput.value.trim()) {
+    dom.interventionCapSummary.innerHTML = `<div class="empty-inline">Choose a student, content area, intervention, and XP to preview the manual XP guardrails.</div>`;
+    dom.interventionCapWarning.textContent = "";
+    dom.interventionOverrideNoteField.classList.add("hidden");
+    dom.interventionOverrideNoteInput.required = false;
+    return;
+  }
+
+  dom.interventionCapSummary.innerHTML = renderCapSummaryMarkup(
+    {
+      used: assessment.projectedUsed,
+      cap: assessment.dailyCap,
+      percentUsed: assessment.percentUsed,
+      color: assessment.color,
+      remaining: assessment.remaining,
+      selectedGoal: assessment.selectedGoal,
+    },
+    "manual XP",
+  );
+  dom.interventionCapWarning.textContent = assessment.messages[0] || "";
+  dom.interventionCapWarning.classList.toggle(
+    "warning-text",
+    assessment.isSoftWarning || assessment.isHardWarning,
+  );
+  dom.interventionOverrideNoteField.classList.toggle("hidden", !assessment.requiresOverride);
+  dom.interventionOverrideNoteInput.required = assessment.requiresOverride;
+}
+
+function legacyOpenInterventionModal2(studentId = null) {
+  dom.interventionForm.reset();
+  populateStudentOptions(studentId);
+  populateContentAreaOptions();
+  dom.interventionDateInput.value = toIsoDate(new Date());
+  dom.interventionTeacherInput.value = getDefaultTeacherName();
+  dom.interventionRepeatedInput.value = "false";
+  dom.interventionOverrideNoteInput.value = "";
+  syncNewContextField();
+  updateInterventionAppOptions();
+  updateInterventionCapSummary();
+  dom.interventionModal.showModal();
+}
+
+async function legacyHandleInterventionSubmit2(event) {
+  event.preventDefault();
+
+  const assessment = buildInterventionCapSummary();
+  if (assessment?.isHardWarning && assessment.color === "red") {
+    const shouldContinue = window.confirm(
+      `This entry will place the student exactly at their daily manual XP allotment of ${assessment.dailyCap}. Continue?`,
+    );
+    if (!shouldContinue) {
+      return;
+    }
+  }
+
+  if (assessment && assessment.requiresOverride && !dom.interventionOverrideNoteInput.value.trim()) {
+    dom.interventionOverrideNoteInput.focus();
+    window.alert("Add an override note before saving an over-cap manual XP entry.");
+    return;
+  }
+
+  if (
+    assessment
+    && (
+      (assessment.blockCap !== null && assessment.projectedBlockUsed > assessment.blockCap)
+      || (assessment.categoryCap !== null && assessment.projectedCategoryUsed > assessment.categoryCap)
+      || (
+        assessment.miniTotalCap !== null
+        && assessment.projectedMiniTotalUsed > assessment.miniTotalCap
+      )
+    )
+  ) {
+    window.alert(assessment.messages[assessment.messages.length - 1] || "This entry exceeds a subject-level cap.");
+    return;
+  }
+
+  try {
+    await state.service.saveIntervention({
+      studentId: dom.interventionStudentInput.value,
+      date: dom.interventionDateInput.value,
+      timestamp: new Date().toISOString(),
+      teacherName: dom.interventionTeacherInput.value,
+      contentAreaId: dom.interventionContentAreaInput.value,
+      appId: dom.interventionAppInput.value,
+      interventionCategory: dom.interventionCategoryInput.value,
+      taskDetail: dom.interventionTaskDetailInput.value,
+      xpAwarded: Number(dom.interventionXpInput.value),
+      notes: dom.interventionNotesInput.value,
+      evidenceOfProduction: dom.interventionEvidenceInput.value,
+      repeatedInNewContext: dom.interventionRepeatedInput.value === "true",
+      newContextNote: dom.interventionNewContextInput.value,
+      overrideNote: dom.interventionOverrideNoteInput.value.trim(),
+    });
+
+    state.selectedStudentId = dom.interventionStudentInput.value;
+    dom.interventionModal.close();
+    await refreshData();
+    switchScreen("student");
+  } catch (error) {
+    console.error(error);
+    window.alert(`Unable to save intervention.\n\n${readableError(error)}`);
+  }
+}
+
+function legacyHandleQuickAddStudentRowsInput2(event) {
+  const field = event.target.getAttribute("data-field");
+  const studentId = event.target.getAttribute("data-student-id");
+  if (!field || !studentId) {
+    return;
+  }
+
+  const current = state.quickAdd.studentEntries[studentId] || {
+    notes: "",
+    xp: "",
+    overrideNote: "",
+  };
+  state.quickAdd.studentEntries[studentId] = {
+    ...current,
+    [field]: event.target.value,
+  };
+  clearQuickAddStatus();
+  renderQuickAddStudentRows();
+}
+
+async function legacyHandleQuickAddSave2() {
+  const interventionName = resolveQuickAddInterventionName();
+
+  if (!state.quickAdd.locked) {
+    setQuickAddStatus("Lock the setup before saving entries.", "error");
+    return;
+  }
+
+  if (!state.quickAdd.teacherName.trim()) {
+    setQuickAddStatus("Teacher name is required.", "error");
+    return;
+  }
+
+  if (!state.quickAdd.date) {
+    setQuickAddStatus("Choose a valid date before saving.", "error");
+    return;
+  }
+
+  if (!state.quickAdd.contentAreaId || !state.quickAdd.appId) {
+    setQuickAddStatus("Choose a content area and app before saving.", "error");
+    return;
+  }
+
+  if (!state.quickAdd.selectedStudentIds.length) {
+    setQuickAddStatus("Add at least one student before saving.", "error");
+    return;
+  }
+
+  if (!interventionName) {
+    setQuickAddStatus("Choose an intervention before saving.", "error");
+    return;
+  }
+
+  const timestamp = new Date().toISOString();
+  const entries = [];
+
+  for (const studentId of state.quickAdd.selectedStudentIds) {
+    const student = getStudentById(studentId);
+    const studentEntry = state.quickAdd.studentEntries[studentId] || {
+      notes: "",
+      xp: "",
+      overrideNote: "",
+    };
+    const rawXp = String(studentEntry.xp ?? "").trim();
+    const parsedXp = rawXp ? Number.parseInt(rawXp, 10) : 2;
+    const xpAwarded = Number.isFinite(parsedXp) ? parsedXp : 2;
+    const assessment = buildManualXpEntryAssessment({
+      student,
+      date: state.quickAdd.date,
+      contentAreaId: state.quickAdd.contentAreaId,
+      interventionCategory: interventionName,
+      proposedXp: xpAwarded,
+    });
+
+    if (
+      (assessment.blockCap !== null && assessment.projectedBlockUsed > assessment.blockCap)
+      || (assessment.categoryCap !== null && assessment.projectedCategoryUsed > assessment.categoryCap)
+      || (
+        assessment.miniTotalCap !== null
+        && assessment.projectedMiniTotalUsed > assessment.miniTotalCap
+      )
+    ) {
+      setQuickAddStatus(
+        `${student.name}: ${assessment.messages[assessment.messages.length - 1] || "This entry exceeds a subject-level cap."}`,
+        "error",
+      );
+      return;
+    }
+
+    if (assessment.color === "pink" && !String(studentEntry.overrideNote || "").trim()) {
+      setQuickAddStatus(`${student.name}: add an override note for over-cap manual XP.`, "error");
+      renderQuickAddStudentRows();
+      return;
+    }
+
+    if (assessment.color === "red") {
+      const shouldContinue = window.confirm(
+        `${student.name} will land exactly at the daily manual XP cap of ${assessment.dailyCap}. Continue?`,
+      );
+      if (!shouldContinue) {
+        return;
+      }
+    }
+
+    const notes = String(studentEntry.notes ?? "").trim();
+    entries.push({
+      studentId,
+      date: state.quickAdd.date,
+      timestamp,
+      teacherName: state.quickAdd.teacherName,
+      contentAreaId: state.quickAdd.contentAreaId,
+      appId: state.quickAdd.appId,
+      interventionCategory: interventionName,
+      taskDetail: interventionName,
+      xpAwarded,
+      notes,
+      evidenceOfProduction: notes || interventionName,
+      repeatedInNewContext: false,
+      newContextNote: "",
+      overrideNote: String(studentEntry.overrideNote || "").trim(),
+    });
+  }
+
+  try {
+    if (typeof state.service.saveInterventions === "function") {
+      await state.service.saveInterventions(entries);
+    } else {
+      for (const entry of entries) {
+        await state.service.saveIntervention(entry);
+      }
+    }
+
+    state.selectedStudentId = state.quickAdd.selectedStudentIds[0] || state.selectedStudentId;
+    const teacherName = state.quickAdd.teacherName;
+    const teacherOption = state.quickAdd.teacherOption;
+    const teacherOtherName = state.quickAdd.teacherOtherName;
+    const date = state.quickAdd.date;
+    const contentAreaId = state.quickAdd.contentAreaId;
+    const appId = state.quickAdd.appId;
+
+    resetQuickAddState(true);
+    state.quickAdd.teacherName = teacherName;
+    state.quickAdd.teacherOption = teacherOption;
+    state.quickAdd.teacherOtherName = teacherOtherName;
+    state.quickAdd.date = date;
+    state.quickAdd.contentAreaId = contentAreaId;
+    state.quickAdd.appId = appId;
+    state.quickAdd.statusMessage = `${entries.length} intervention entr${
+      entries.length === 1 ? "y" : "ies"
+    } saved.`;
+    state.quickAdd.statusTone = "success";
+
+    await refreshData();
+    switchScreen("home");
+  } catch (error) {
+    console.error(error);
+    setQuickAddStatus(`Unable to save quick entries. ${readableError(error)}`, "error");
+    renderQuickAdd();
+  }
+}
+
+function legacyAddQuickAddStudent2(studentId) {
+  if (!studentId || state.quickAdd.locked) {
+    return;
+  }
+
+  if (!state.quickAdd.selectedStudentIds.includes(studentId)) {
+    state.quickAdd.selectedStudentIds = [...state.quickAdd.selectedStudentIds, studentId];
+  }
+
+  state.quickAdd.studentEntries[studentId] = state.quickAdd.studentEntries[studentId] || {
+    notes: "",
+    xp: "",
+    overrideNote: "",
+  };
+  state.quickAdd.studentQuery = "";
+  state.quickAdd.intervention = "";
+  state.quickAdd.customIntervention = "";
+  clearQuickAddStatus();
+  renderQuickAdd();
+  dom.quickAddStudentSearchInput.focus();
+}
+
+function legacySyncQuickAddState2() {
+  syncQuickAddTeacherDefault();
+  const validStudentIds = new Set(getActiveStudents().map((student) => student.id));
+  state.quickAdd.selectedStudentIds = state.quickAdd.selectedStudentIds.filter((studentId) =>
+    validStudentIds.has(studentId),
+  );
+
+  state.quickAdd.studentEntries = Object.fromEntries(
+    state.quickAdd.selectedStudentIds.map((studentId) => [
+      studentId,
+      {
+        notes: state.quickAdd.studentEntries[studentId]?.notes || "",
+        xp: state.quickAdd.studentEntries[studentId]?.xp || "",
+        overrideNote: state.quickAdd.studentEntries[studentId]?.overrideNote || "",
+      },
+    ]),
+  );
+
+  const contentAreas = getQuickAddContentAreas();
+  if (!contentAreas.some((contentArea) => contentArea.id === state.quickAdd.contentAreaId)) {
+    state.quickAdd.contentAreaId = contentAreas[0]?.id || "";
+  }
+
+  const appOptions = getQuickAddAppOptions(
+    state.quickAdd.contentAreaId,
+    state.quickAdd.selectedStudentIds,
+  );
+  if (!appOptions.some((app) => app.id === state.quickAdd.appId)) {
+    state.quickAdd.appId = appOptions[0]?.id || "";
+  }
+
+  const interventions = getQuickAddInterventionOptions(state.quickAdd.contentAreaId);
+  const validInterventions = new Set([...interventions, QUICK_ADD_CUSTOM_VALUE]);
+  if (!validInterventions.has(state.quickAdd.intervention)) {
+    state.quickAdd.intervention = interventions.length ? "" : QUICK_ADD_CUSTOM_VALUE;
+  }
+
+  if (!state.quickAdd.selectedStudentIds.length) {
+    state.quickAdd.locked = false;
+  }
+}
+
+function legacyRenderAnalytics2() {
+  if (!dom.analyticsScreen) {
+    return;
+  }
+
+  const students = [...state.data.students].sort((left, right) => left.name.localeCompare(right.name));
+  const activeApps = state.data.apps.filter((app) => app.active);
+
+  dom.analyticsStudentSelect.innerHTML = [
+    `<option value="">All Students</option>`,
+    ...students.map(
+      (student) => `<option value="${escapeHtml(student.id)}">${escapeHtml(student.name)}</option>`,
+    ),
+  ].join("");
+  dom.analyticsStudentSelect.value = state.analytics.studentId;
+
+  dom.analyticsAreaAppFilter.innerHTML = [
+    `<option value="all">All Content Areas and Apps</option>`,
+    ...state.data.contentAreas
+      .filter((contentArea) => contentArea.active)
+      .sort((left, right) => left.name.localeCompare(right.name))
+      .map(
+        (contentArea) =>
+          `<option value="content:${escapeHtml(contentArea.id)}">${escapeHtml(contentArea.name)}</option>`,
+      ),
+    ...activeApps
+      .sort((left, right) => left.name.localeCompare(right.name))
+      .map(
+        (app) =>
+          `<option value="app:${escapeHtml(app.id)}">${escapeHtml(
+            `${getContentAreaById(app.contentAreaId)?.name || "Other"} | ${app.name}`,
+          )}</option>`,
+      ),
+  ].join("");
+  dom.analyticsAreaAppFilter.value = state.analytics.areaApp;
+
+  dom.analyticsLevelFilter.innerHTML = [
+    `<option value="all">All SOAR Levels</option>`,
+    ...[1, 2, 3, 4, 5, 6].map((level) => `<option value="${level}">Level ${level}</option>`),
+  ].join("");
+  dom.analyticsLevelFilter.value = String(state.analytics.level);
+
+  dom.analyticsGoalBandFilter.innerHTML = DAILY_AVERAGE_GOAL_BANDS.map(
+    (band) => `<option value="${escapeHtml(band.value)}">${escapeHtml(band.label)}</option>`,
+  ).join("");
+  dom.analyticsGoalBandFilter.value = state.analytics.goalBand;
+  dom.analyticsStartDateInput.value = state.analytics.startDate;
+  dom.analyticsEndDateInput.value = state.analytics.endDate;
+
+  const startDate = new Date(state.analytics.startDate);
+  const endDate = new Date(state.analytics.endDate);
+  if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime()) || startDate > endDate) {
+    dom.analyticsSummary.innerHTML = `<div class="empty-state">Choose a valid analytics date range.</div>`;
+    dom.analyticsHeatMap.innerHTML = "";
+    return;
+  }
+
+  const filteredStudents = students.filter((student) => {
+    if (state.analytics.studentId && student.id !== state.analytics.studentId) {
+      return false;
+    }
+    if (state.analytics.level !== "all" && getStudentAllotmentLevel(student) !== Number(state.analytics.level)) {
+      return false;
+    }
+    if (
+      state.analytics.goalBand !== "all"
+      && getGoalBandValue(getStudentDailyAverageGoal(student)) !== state.analytics.goalBand
+    ) {
+      return false;
+    }
+    return true;
+  });
+  const allowedStudentIds = new Set(filteredStudents.map((student) => student.id));
+  const filteredRecords = state.data.interventions.filter((record) => {
+    if (!allowedStudentIds.has(record.studentId)) {
+      return false;
+    }
+    if (!isDateWithinRange(record.date, state.analytics.startDate, state.analytics.endDate)) {
+      return false;
+    }
+    if (state.analytics.areaApp.startsWith("content:")) {
+      return record.contentAreaId === state.analytics.areaApp.replace("content:", "");
+    }
+    if (state.analytics.areaApp.startsWith("app:")) {
+      return record.appId === state.analytics.areaApp.replace("app:", "");
+    }
+    return true;
+  });
+
+  const dates = [];
+  for (let cursor = new Date(startDate); cursor <= endDate; cursor = addDays(cursor, 1)) {
+    dates.push(toIsoDate(cursor));
+  }
+
+  const rows = [];
+  const rowSeen = new Set();
+  filteredRecords.forEach((record) => {
+    const app = getAppById(record.appId);
+    const contentArea = getContentAreaById(record.contentAreaId);
+    const rowKey = app ? `app:${app.id}` : `content:${record.contentAreaId}`;
+    if (rowSeen.has(rowKey)) {
+      return;
+    }
+    rowSeen.add(rowKey);
+    rows.push({
+      key: rowKey,
+      label: app ? `${contentArea?.name || "Other"} | ${app.name}` : contentArea?.name || "Other",
+    });
+  });
+  rows.sort((left, right) => left.label.localeCompare(right.label));
+
+  const totalsByRow = new Map();
+  const totalsByIntervention = new Map();
+  const overCapDays = new Set();
+  let totalXp = 0;
+
+  filteredRecords.forEach((record) => {
+    const rowLabel = rows.find((row) =>
+      row.key.startsWith("app:")
+        ? row.key === `app:${record.appId}`
+        : row.key === `content:${record.contentAreaId}`,
+    )?.label || "Other";
+    totalsByRow.set(rowLabel, (totalsByRow.get(rowLabel) || 0) + Number(record.xpAwarded || 0));
+    totalsByIntervention.set(
+      record.interventionCategory,
+      (totalsByIntervention.get(record.interventionCategory) || 0) + Number(record.xpAwarded || 0),
+    );
+    totalXp += Number(record.xpAwarded || 0);
+
+    const student = getStudentById(record.studentId);
+    if (student) {
+      const snapshot = buildStudentManualXpSnapshot(student, record.date);
+      if (snapshot.used > snapshot.cap) {
+        overCapDays.add(`${student.id}:${record.date}`);
+      }
+    }
+  });
+
+  const topRow = [...totalsByRow.entries()].sort((left, right) => right[1] - left[1])[0] || null;
+  const topIntervention =
+    [...totalsByIntervention.entries()].sort((left, right) => right[1] - left[1])[0] || null;
+
+  dom.analyticsSummary.innerHTML = `
+    <div class="analytics-summary-grid">
+      <article class="metric-card">
+        <span class="metric-label">Manual XP Logged</span>
+        <strong>${totalXp}</strong>
+        <span class="metric-subtle">${filteredRecords.length} intervention entries</span>
+      </article>
+      <article class="metric-card">
+        <span class="metric-label">Over-Cap Days</span>
+        <strong>${overCapDays.size}</strong>
+        <span class="metric-subtle">Days finished above the daily allotment</span>
+      </article>
+      <article class="metric-card">
+        <span class="metric-label">Top App / Area</span>
+        <strong>${escapeHtml(topRow?.[0] || "None")}</strong>
+        <span class="metric-subtle">${
+          topRow && totalXp ? `${Math.round((topRow[1] / totalXp) * 100)}% of manual XP` : "No data"
+        }</span>
+      </article>
+      <article class="metric-card">
+        <span class="metric-label">Top Intervention</span>
+        <strong>${escapeHtml(topIntervention?.[0] || "None")}</strong>
+        <span class="metric-subtle">${
+          topIntervention && totalXp
+            ? `${Math.round((topIntervention[1] / totalXp) * 100)}% of manual XP`
+            : "No data"
+        }</span>
+      </article>
+    </div>
+    <div class="analytics-flags">
+      <p class="status-line ${topRow && totalXp && topRow[1] / totalXp >= 0.6 ? "warning-text" : ""}">
+        ${
+          topRow && totalXp && topRow[1] / totalXp >= 0.6
+            ? `${escapeHtml(topRow[0])} is carrying most of the current manual XP load.`
+            : "Manual XP is spread across multiple apps and content areas."
+        }
+      </p>
+      <p class="status-line ${topIntervention && totalXp && topIntervention[1] / totalXp >= 0.6 ? "warning-text" : ""}">
+        ${
+          topIntervention && totalXp && topIntervention[1] / totalXp >= 0.6
+            ? `${escapeHtml(topIntervention[0])} is dominating the intervention mix.`
+            : "No single intervention type is dominating the current filter range."
+        }
+      </p>
+    </div>
+  `;
+
+  if (!rows.length || !dates.length) {
+    dom.analyticsHeatMap.innerHTML = `<div class="empty-state">No manual XP records match the selected filters.</div>`;
+    return;
+  }
+
+  dom.analyticsHeatMap.innerHTML = `
+    <div class="heat-map-wrap">
+      <table class="heat-map-table">
+        <thead>
+          <tr>
+            <th scope="col">App / Content</th>
+            ${dates.map((date) => `<th scope="col">${escapeHtml(formatShortDate(date))}</th>`).join("")}
+          </tr>
+        </thead>
+        <tbody>
+          ${rows
+            .map((row) => {
+              const cells = dates
+                .map((date) => {
+                  const cellRecords = filteredRecords.filter((record) => {
+                    const rowMatches = row.key.startsWith("app:")
+                      ? record.appId === row.key.replace("app:", "")
+                      : record.contentAreaId === row.key.replace("content:", "");
+                    return rowMatches && record.date === date;
+                  });
+                  const total = sumManualXp(cellRecords);
+                  const capTotal = [...new Set(cellRecords.map((record) => record.studentId))]
+                    .map((studentId) => getStudentById(studentId))
+                    .filter(Boolean)
+                    .reduce((sum, student) => sum + getStudentDailyManualCap(student), 0);
+                  const percent = capTotal > 0 ? Math.round((total / capTotal) * 100) : 0;
+                  const toneClass =
+                    percent > 100
+                      ? "heat-pink"
+                      : percent === 100
+                        ? "heat-red"
+                        : percent >= 80
+                          ? "heat-yellow"
+                          : total > 0
+                            ? "heat-blue"
+                            : "heat-empty";
+                  return `
+                    <td
+                      class="heat-map-cell ${toneClass}"
+                      title="${escapeHtml(`${row.label} on ${date}: ${total} XP (${percent}% of daily cap)`)}"
+                    >
+                      <strong>${total || ""}</strong>
+                    </td>
+                  `;
+                })
+                .join("");
+
+              return `
+                <tr>
+                  <th scope="row">${escapeHtml(row.label)}</th>
+                  ${cells}
+                </tr>
+              `;
+            })
+            .join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function legacyHandleAnalyticsFilterChange2() {
+  state.analytics.studentId = dom.analyticsStudentSelect.value;
+  state.analytics.startDate = dom.analyticsStartDateInput.value;
+  state.analytics.endDate = dom.analyticsEndDateInput.value;
+  state.analytics.areaApp = dom.analyticsAreaAppFilter.value;
+  state.analytics.level = dom.analyticsLevelFilter.value;
+  state.analytics.goalBand = dom.analyticsGoalBandFilter.value;
+  renderAnalytics();
+}
+
+function legacyGetPreviewConfig2() {
+  const params = new URLSearchParams(window.location.search);
+  const screen = params.get("preview");
+  if (!screen) {
+    return null;
+  }
+
+  const host = window.location.hostname;
+  if (!["", "localhost", "127.0.0.1"].includes(host)) {
+    return null;
+  }
+
+  const normalizedScreen = ["home", "students", "student", "settings", "export", "login", "analytics"].includes(screen)
+    ? screen
+    : "home";
+  const role = params.get("role") || (normalizedScreen === "settings" ? "admin" : "teacher");
+
+  return {
+    screen: normalizedScreen,
+    modal: params.get("modal") || "",
+    session:
+      role === "admin"
+        ? createSession("admin", "Admin", { username: DEFAULT_ADMIN_USERNAME })
+        : role === "guide"
+          ? createSession("guide", state.data.guideUsers[0]?.username || "guide-demo", {
+              username: state.data.guideUsers[0]?.username || "guide-demo",
+              guideId: state.data.guideUsers[0]?.id || null,
+            })
+          : createSession("teacher", "Teacher Access"),
+  };
 }
 
 function renderSettings() {
@@ -1295,6 +2786,7 @@ function switchScreen(screen) {
     dom.studentsScreen.classList.add("hidden");
     dom.studentProfileScreen.classList.add("hidden");
     dom.settingsScreen.classList.add("hidden");
+    dom.analyticsScreen.classList.add("hidden");
     dom.exportScreen.classList.add("hidden");
 
     if (screen === "students") {
@@ -1303,6 +2795,8 @@ function switchScreen(screen) {
       dom.studentProfileScreen.classList.remove("hidden");
     } else if (screen === "settings") {
       dom.settingsScreen.classList.remove("hidden");
+    } else if (screen === "analytics") {
+      dom.analyticsScreen.classList.remove("hidden");
     } else if (screen === "export") {
       dom.exportScreen.classList.remove("hidden");
     } else {
@@ -1330,6 +2824,40 @@ function handleStudentGridClick(event) {
   switchScreen("student");
 }
 
+async function handleStudentStatusChange() {
+  const student = getStudentById(state.selectedStudentId);
+  if (!student) {
+    return;
+  }
+
+  const nextActive = dom.studentStatusSelect.value === "active";
+  if (student.active === nextActive) {
+    return;
+  }
+
+  dom.studentStatusSelect.disabled = true;
+  setStatus(dom.studentStatusMessage, "Saving student status...", "neutral");
+
+  try {
+    await state.service.saveStudent({
+      ...student,
+      active: nextActive,
+    });
+    await refreshData();
+    renderStudentProfile();
+    setStatus(
+      dom.studentStatusMessage,
+      `Student marked ${nextActive ? "active" : "inactive"}.`,
+      "success",
+    );
+  } catch (error) {
+    console.error(error);
+    dom.studentStatusSelect.disabled = false;
+    dom.studentStatusSelect.value = student.active ? "active" : "inactive";
+    setStatus(dom.studentStatusMessage, readableError(error), "error");
+  }
+}
+
 function openStudentModal() {
   dom.studentForm.reset();
   dom.studentIdInput.value = "";
@@ -1337,6 +2865,8 @@ function openStudentModal() {
   dom.studentBandInput.value = "K-2";
   dom.studentGradeBandInput.value = "Kindergarten";
   dom.studentWidaInput.value = "1";
+  dom.studentAllotmentLevelInput.value = "1";
+  dom.studentDailyAverageGoalInput.value = "120";
   dom.studentModal.showModal();
 }
 
@@ -1350,6 +2880,8 @@ async function handleStudentSubmit(event) {
       band: dom.studentBandInput.value,
       gradeBand: dom.studentGradeBandInput.value,
       widaLevel: dom.studentWidaInput.value,
+      allotmentLevel: dom.studentAllotmentLevelInput.value,
+      dailyAverageXpGoal: Number(dom.studentDailyAverageGoalInput.value),
       active: dom.studentActiveInput.checked,
     });
 
@@ -2051,6 +3583,7 @@ function syncNavigationState() {
     [dom.homeButton, "home"],
     [dom.studentsButton, "students"],
     [dom.settingsButton, "settings"],
+    [dom.analyticsButton, "analytics"],
     [dom.exportButton, "export"],
   ].forEach(([button, screen]) => {
     button.classList.toggle("is-active", activeNav === screen);
@@ -2218,6 +3751,231 @@ function getContentAreaById(contentAreaId) {
 
 function getAppById(appId) {
   return state.data.apps.find((app) => app.id === appId) || null;
+}
+
+function getStudentAllotmentLevel(student) {
+  return Number(student?.allotmentLevel || student?.widaLevel || 1);
+}
+
+function getStudentDailyAverageGoal(student) {
+  const rawValue = Number(student?.dailyAverageXpGoal || 120);
+  return DAILY_AVERAGE_GOAL_OPTIONS.includes(rawValue) ? rawValue : 120;
+}
+
+function getCapPercentageForLevel(level) {
+  return SOAR_CAP_PERCENTAGES[Number(level)] ?? 0;
+}
+
+function getStudentDailyManualCap(student) {
+  return Math.floor(getStudentDailyAverageGoal(student) * getCapPercentageForLevel(getStudentAllotmentLevel(student)));
+}
+
+function getCapTrackedContentKey(contentAreaId) {
+  const key = getContentAreaKey(getContentAreaById(contentAreaId)?.name);
+  return ["math", "reading", "language"].includes(key) ? key : null;
+}
+
+function getBlockCapForContentArea(contentAreaId) {
+  const trackedKey = getCapTrackedContentKey(contentAreaId);
+  return trackedKey ? SOAR_BLOCK_CAPS[trackedKey] : null;
+}
+
+function getInterventionCapKey(interventionCategory) {
+  return QUICK_ADD_INTERVENTION_CAP_KEYS[String(interventionCategory || "").trim()] || null;
+}
+
+function getCategoryCapForIntervention(contentAreaId, interventionCategory) {
+  const trackedKey = getCapTrackedContentKey(contentAreaId);
+  const capKey = getInterventionCapKey(interventionCategory);
+  if (!trackedKey || !capKey) {
+    return null;
+  }
+  return APP_INTERVENTION_CAPS[trackedKey]?.[capKey] ?? null;
+}
+
+function isMiniMissionCapKey(capKey) {
+  return ["miniTier1", "miniTier2", "miniTier3"].includes(capKey);
+}
+
+function getRecordsForDate(studentId, date, excludeInterventionId = "") {
+  return getStudentInterventions(studentId).filter(
+    (record) => record.date === date && record.id !== excludeInterventionId,
+  );
+}
+
+function sumManualXp(records) {
+  return records.reduce((total, record) => total + Number(record.xpAwarded || 0), 0);
+}
+
+function getManualXpStatusColor(ratio) {
+  if (ratio > 1) {
+    return "pink";
+  }
+  if (ratio === 1) {
+    return "red";
+  }
+  if (ratio >= 0.8) {
+    return "yellow";
+  }
+  return "blue";
+}
+
+function getManualXpStatusLabel(color) {
+  return {
+    blue: "Safely below allotment",
+    yellow: "Nearing allotment",
+    red: "At allotment",
+    pink: "Over allotment",
+  }[color];
+}
+
+function getManualXpUsageRatio(used, cap) {
+  if (cap <= 0) {
+    return used > 0 ? Number.POSITIVE_INFINITY : 0;
+  }
+  return used / cap;
+}
+
+function getPercentUsed(used, cap) {
+  if (cap <= 0) {
+    return used > 0 ? 100 : 0;
+  }
+  return Math.round((used / cap) * 100);
+}
+
+function buildStudentManualXpSnapshot(student, date = toIsoDate(new Date())) {
+  const records = getRecordsForDate(student.id, date);
+  const used = sumManualXp(records);
+  const cap = getStudentDailyManualCap(student);
+  const ratio = getManualXpUsageRatio(used, cap);
+  const color = getManualXpStatusColor(ratio);
+  return {
+    date,
+    used,
+    cap,
+    ratio,
+    color,
+    percentUsed: getPercentUsed(used, cap),
+    remaining: Math.max(cap - used, 0),
+    selectedGoal: getStudentDailyAverageGoal(student),
+    level: getStudentAllotmentLevel(student),
+  };
+}
+
+function buildManualXpEntryAssessment({
+  student,
+  date,
+  contentAreaId,
+  interventionCategory,
+  proposedXp,
+  excludeInterventionId = "",
+}) {
+  const records = getRecordsForDate(student.id, date, excludeInterventionId);
+  const usedToday = sumManualXp(records);
+  const blockKey = getCapTrackedContentKey(contentAreaId);
+  const blockRecords = blockKey
+    ? records.filter((record) => getCapTrackedContentKey(record.contentAreaId) === blockKey)
+    : [];
+  const usedInBlock = sumManualXp(blockRecords);
+  const capKey = getInterventionCapKey(interventionCategory);
+  const categoryRecords = capKey
+    ? blockRecords.filter((record) => getInterventionCapKey(record.interventionCategory) === capKey)
+    : [];
+  const usedInCategory = sumManualXp(categoryRecords);
+  const miniRecords = capKey && isMiniMissionCapKey(capKey)
+    ? blockRecords.filter((record) => isMiniMissionCapKey(getInterventionCapKey(record.interventionCategory)))
+    : [];
+  const usedInMiniTotal = sumManualXp(miniRecords);
+
+  const normalizedXp = Number.isFinite(Number(proposedXp)) ? Number(proposedXp) : 0;
+  const projectedUsed = usedToday + normalizedXp;
+  const dailyCap = getStudentDailyManualCap(student);
+  const ratio = getManualXpUsageRatio(projectedUsed, dailyCap);
+  const color = getManualXpStatusColor(ratio);
+  const blockCap = getBlockCapForContentArea(contentAreaId);
+  const categoryCap = getCategoryCapForIntervention(contentAreaId, interventionCategory);
+  const miniTotalCap = blockKey ? APP_INTERVENTION_CAPS[blockKey]?.miniTotal ?? null : null;
+  const projectedBlockUsed = usedInBlock + normalizedXp;
+  const projectedCategoryUsed = usedInCategory + normalizedXp;
+  const projectedMiniTotalUsed =
+    capKey && isMiniMissionCapKey(capKey) ? usedInMiniTotal + normalizedXp : usedInMiniTotal;
+  const messages = [];
+
+  if (dailyCap <= 0 && projectedUsed > 0) {
+    messages.push("This student's current SOAR level allows 0 daily manual XP.");
+  } else if (projectedUsed > dailyCap) {
+    messages.push(`This entry would exceed the daily manual XP cap of ${dailyCap}.`);
+  } else if (projectedUsed === dailyCap && normalizedXp > 0) {
+    messages.push(`This entry would place the student exactly at the daily cap of ${dailyCap}.`);
+  } else if (dailyCap > 0 && projectedUsed / dailyCap >= 0.8) {
+    messages.push("This entry is nearing the student's daily manual XP cap.");
+  }
+
+  if (blockCap !== null && projectedBlockUsed > blockCap) {
+    messages.push(`This entry would exceed the ${blockKey} block cap of ${blockCap} manual XP.`);
+  }
+  if (categoryCap !== null && projectedCategoryUsed > categoryCap) {
+    messages.push(`This entry would exceed the intervention cap of ${categoryCap} XP for this block.`);
+  }
+  if (miniTotalCap !== null && capKey && isMiniMissionCapKey(capKey) && projectedMiniTotalUsed > miniTotalCap) {
+    messages.push(`This entry would exceed the mini-mission total cap of ${miniTotalCap} XP in this block.`);
+  }
+
+  return {
+    usedToday,
+    projectedUsed,
+    dailyCap,
+    ratio,
+    color,
+    percentUsed: getPercentUsed(projectedUsed, dailyCap),
+    remaining: Math.max(dailyCap - projectedUsed, 0),
+    selectedGoal: getStudentDailyAverageGoal(student),
+    blockCap,
+    projectedBlockUsed,
+    categoryCap,
+    projectedCategoryUsed,
+    miniTotalCap,
+    projectedMiniTotalUsed,
+    requiresOverride: color === "pink" || (blockCap !== null && projectedBlockUsed > blockCap),
+    isHardWarning:
+      color === "red"
+      || color === "pink"
+      || (blockCap !== null && projectedBlockUsed >= blockCap)
+      || (categoryCap !== null && projectedCategoryUsed > categoryCap)
+      || (miniTotalCap !== null && capKey && isMiniMissionCapKey(capKey) && projectedMiniTotalUsed > miniTotalCap),
+    isSoftWarning: color === "yellow",
+    messages,
+  };
+}
+
+function legacyRenderCapSummaryMarkup1(snapshot, labelPrefix = "manual XP") {
+  const statusLabel = getManualXpStatusLabel(snapshot.color);
+  return `
+    <div class="cap-summary-card cap-status-${snapshot.color}">
+      <div class="cap-summary-header">
+        <strong>${escapeHtml(statusLabel)}</strong>
+        <span class="inline-badge">${escapeHtml(String(snapshot.percentUsed))}% used</span>
+      </div>
+      <p>${escapeHtml(`${snapshot.used} of ${snapshot.cap} ${labelPrefix} used`)}</p>
+      <p>${escapeHtml(`${snapshot.percentUsed}% of daily ${labelPrefix} allotment used`)}</p>
+      <div class="cap-summary-grid">
+        <div><span class="muted">Daily Goal</span><strong>${snapshot.selectedGoal}</strong></div>
+        <div><span class="muted">Daily Cap</span><strong>${snapshot.cap}</strong></div>
+        <div><span class="muted">Entered Today</span><strong>${snapshot.used}</strong></div>
+        <div><span class="muted">Remaining</span><strong>${snapshot.remaining}</strong></div>
+      </div>
+    </div>
+  `;
+}
+
+function getGoalBandValue(goal) {
+  if (goal <= 80) {
+    return "50-80";
+  }
+  if (goal <= 120) {
+    return "90-120";
+  }
+  return "130-150";
 }
 
 function getQuickAddContentAreas() {
@@ -2616,4 +4374,604 @@ function slugify(value) {
 
 function runWithViewTransition(update) {
   update();
+}
+
+function renderCapSummaryMarkup(snapshot, labelPrefix = "manual XP") {
+  const statusLabel = getManualXpStatusLabel(snapshot.color);
+  return `
+    <div class="cap-summary-card cap-status-${snapshot.color}">
+      <div class="cap-summary-header">
+        <strong>${escapeHtml(statusLabel)}</strong>
+        <span class="status-pill status-pill-${snapshot.color}">${escapeHtml(statusLabel)}</span>
+      </div>
+      <p>${escapeHtml(`${snapshot.used} of ${snapshot.cap} ${labelPrefix} used`)}</p>
+      <p>${escapeHtml(`${snapshot.percentUsed}% of daily ${labelPrefix} allotment used`)}</p>
+      <div class="cap-summary-grid">
+        <div><span class="muted">Daily Goal</span><strong>${snapshot.selectedGoal}</strong></div>
+        <div><span class="muted">Daily Cap</span><strong>${snapshot.cap}</strong></div>
+        <div><span class="muted">Entered Today</span><strong>${snapshot.used}</strong></div>
+        <div><span class="muted">Remaining</span><strong>${snapshot.remaining}</strong></div>
+      </div>
+    </div>
+  `;
+}
+
+function renderStudentProfile() {
+  const student = getStudentById(state.selectedStudentId);
+  if (!student) {
+    dom.studentProfileName.textContent = "Student Profile";
+    dom.studentProfileSummary.textContent = "Select a student from the home screen.";
+    dom.studentStatusSelect.value = "active";
+    dom.studentStatusSelect.disabled = true;
+    setStatus(dom.studentStatusMessage, "", "neutral");
+    dom.studentOverviewCard.innerHTML = `<div class="empty-state">No student selected.</div>`;
+    dom.dailyAccordion.innerHTML = "";
+    return;
+  }
+
+  const activeAssignments = getAssignmentsForStudent(student.id).filter((item) => item.active);
+  const appMap = new Map(state.data.apps.map((app) => [app.id, app]));
+  const contentAreaMap = new Map(
+    state.data.contentAreas.map((contentArea) => [contentArea.id, contentArea]),
+  );
+  const groupedApps = state.data.contentAreas
+    .filter((contentArea) => contentArea.active)
+    .map((contentArea) => ({
+      contentArea,
+      apps: activeAssignments
+        .map((assignment) => appMap.get(assignment.appId))
+        .filter((app) => app && app.contentAreaId === contentArea.id && app.active),
+    }))
+    .filter((group) => group.apps.length > 0);
+
+  const currentWeekStart = getStartOfWeek(new Date());
+  const currentWeekEnd = addDays(currentWeekStart, 6);
+  const currentWeekTotal = sumXp(
+    getStudentInterventions(student.id).filter((item) =>
+      isDateWithinRange(item.date, toIsoDate(currentWeekStart), toIsoDate(currentWeekEnd)),
+    ),
+  );
+  const todaySnapshot = buildStudentManualXpSnapshot(student);
+
+  dom.studentProfileName.textContent = student.name;
+  dom.studentStatusSelect.disabled = false;
+  dom.studentStatusSelect.value = student.active ? "active" : "inactive";
+  setStatus(dom.studentStatusMessage, "", "neutral");
+  dom.studentProfileSummary.textContent = `${student.band} | ${student.gradeBand} | WIDA ${student.widaLevel}`;
+  dom.studentOverviewCard.innerHTML = `
+    <div class="overview-grid">
+      <div class="stack-md">
+        <div class="section-block">
+          <p class="eyebrow">Student Details</p>
+          <h3>${escapeHtml(student.name)}</h3>
+          <p class="muted">${escapeHtml(`${student.band} | ${student.gradeBand} | WIDA ${student.widaLevel}`)}</p>
+        </div>
+        <div class="profile-stats">
+          <div class="metric-card metric-card-featured">
+            <span class="metric-label">Current Week</span>
+            <strong>${currentWeekTotal}</strong>
+            <span class="metric-subtle">XP total</span>
+          </div>
+          <div class="status-stack">
+            <span class="inline-badge">${student.active ? "Active" : "Archived"}</span>
+          </div>
+        </div>
+        ${renderCapSummaryMarkup(todaySnapshot)}
+        <form class="profile-config-form">
+          <input type="hidden" name="studentId" value="${escapeHtml(student.id)}" />
+          <label class="field small-field">
+            <span>SOAR/WIDA Level</span>
+            <input
+              type="number"
+              name="allotmentLevel"
+              min="1"
+              max="6"
+              step="1"
+              required
+              value="${escapeHtml(String(getStudentAllotmentLevel(student)))}"
+            />
+          </label>
+          <label class="field small-field">
+            <span>Daily Average XP Goal</span>
+            <select name="dailyAverageXpGoal" required>
+              ${DAILY_AVERAGE_GOAL_OPTIONS.map(
+                (goal) => `
+                  <option value="${goal}" ${goal === getStudentDailyAverageGoal(student) ? "selected" : ""}>
+                    ${goal}
+                  </option>
+                `,
+              ).join("")}
+            </select>
+          </label>
+          <button class="button button-secondary" type="submit">Save Cap Settings</button>
+        </form>
+      </div>
+      <div class="stack-sm">
+        <div class="section-block">
+          <p class="eyebrow">Assigned Apps</p>
+          ${
+            groupedApps.length
+              ? groupedApps
+                  .map(
+                    (group) => `
+                  <div class="stack-sm">
+                    <strong>${escapeHtml(group.contentArea.name)}</strong>
+                    <div class="app-pill-row">
+                      ${group.apps
+                        .map((app) => `<span class="app-pill">${escapeHtml(app.name)}</span>`)
+                        .join("")}
+                    </div>
+                  </div>
+                `,
+                  )
+                  .join("")
+              : `<p class="muted">No apps assigned yet.</p>`
+          }
+        </div>
+      </div>
+    </div>
+  `;
+
+  dom.weekRangeLabel.textContent = formatDateRange(
+    state.selectedWeekStart,
+    addDays(state.selectedWeekStart, 6),
+  );
+
+  const weekDays = Array.from({ length: 7 }, (_, index) => addDays(state.selectedWeekStart, index));
+  dom.dailyAccordion.innerHTML = weekDays
+    .map((date) => {
+      const isoDate = toIsoDate(date);
+      const dayRecords = getStudentInterventions(student.id)
+        .filter((item) => item.date === isoDate)
+        .sort((left, right) => new Date(right.timestamp) - new Date(left.timestamp));
+      const dayTotal = sumXp(dayRecords);
+      const shouldOpen = isoDate === toIsoDate(new Date()) || dayRecords.length > 0;
+
+      return `
+        <details class="day-accordion" ${shouldOpen ? "open" : ""}>
+          <summary class="day-summary">
+            <div class="day-heading">
+              <strong>${escapeHtml(formatDayLabel(date))}</strong>
+              <p class="muted">${escapeHtml(formatShortDate(date))}</p>
+            </div>
+            <span class="xp-pill">Total XP: ${dayTotal}</span>
+          </summary>
+          <div class="intervention-list">
+            ${
+              dayRecords.length
+                ? dayRecords
+                    .map((record) => renderInterventionCard(record, contentAreaMap, appMap))
+                    .join("")
+                : `<div class="empty-state">No interventions recorded for this day.</div>`
+            }
+          </div>
+        </details>
+      `;
+    })
+    .join("");
+}
+
+async function handleStudentProfileConfigSubmit(event) {
+  event.preventDefault();
+
+  const form = new FormData(event.target);
+  const studentId = String(form.get("studentId") || "");
+  const student = getStudentById(studentId);
+  if (!student) {
+    return;
+  }
+
+  const allotmentLevel = Number.parseInt(String(form.get("allotmentLevel") || ""), 10);
+  const dailyAverageXpGoal = Number.parseInt(String(form.get("dailyAverageXpGoal") || ""), 10);
+
+  if (!Number.isInteger(allotmentLevel) || allotmentLevel < 1 || allotmentLevel > 6) {
+    setStatus(dom.studentStatusMessage, "SOAR/WIDA level must be a whole number from 1 to 6.", "error");
+    return;
+  }
+
+  if (!DAILY_AVERAGE_GOAL_OPTIONS.includes(dailyAverageXpGoal)) {
+    setStatus(dom.studentStatusMessage, "Choose one of the allowed Daily Average XP Goal values.", "error");
+    return;
+  }
+
+  setStatus(dom.studentStatusMessage, "Saving cap settings...", "neutral");
+  try {
+    await state.service.saveStudent({
+      ...student,
+      allotmentLevel,
+      dailyAverageXpGoal,
+    });
+    await refreshData();
+    renderStudentProfile();
+    setStatus(dom.studentStatusMessage, "Cap settings saved.", "success");
+  } catch (error) {
+    console.error(error);
+    setStatus(dom.studentStatusMessage, readableError(error), "error");
+  }
+}
+
+function renderInterventionCard(record, contentAreaMap, appMap) {
+  const contentArea = contentAreaMap.get(record.contentAreaId)?.name || "Unknown";
+  const app = appMap.get(record.appId)?.name || "Unknown";
+
+  return `
+    <article class="intervention-card stack-sm">
+      <div class="record-toolbar">
+        <span class="inline-badge">${escapeHtml(formatTime(record.timestamp))}</span>
+        <span class="xp-pill">XP ${record.xpAwarded}</span>
+      </div>
+      <div class="record-grid">
+        <div>
+          <strong>Teacher</strong>
+          <p>${escapeHtml(record.teacherName)}</p>
+        </div>
+        <div>
+          <strong>Content Area</strong>
+          <p>${escapeHtml(contentArea)}</p>
+        </div>
+        <div>
+          <strong>App</strong>
+          <p>${escapeHtml(app)}</p>
+        </div>
+        <div>
+          <strong>Category</strong>
+          <p>${escapeHtml(record.interventionCategory)}</p>
+        </div>
+        <div>
+          <strong>Task Detail</strong>
+          <p>${escapeHtml(record.taskDetail)}</p>
+        </div>
+        <div>
+          <strong>Notes</strong>
+          <p>${escapeHtml(record.notes || "No notes")}</p>
+        </div>
+        <div>
+          <strong>Evidence of Production</strong>
+          <p>${escapeHtml(record.evidenceOfProduction)}</p>
+        </div>
+        <div>
+          <strong>Repeated in New Context</strong>
+          <p>${record.repeatedInNewContext ? "Yes" : "No"}</p>
+        </div>
+        ${
+          record.repeatedInNewContext
+            ? `
+              <div>
+                <strong>New Context Note</strong>
+                <p>${escapeHtml(record.newContextNote || "Added without a note")}</p>
+              </div>
+            `
+            : ""
+        }
+        ${
+          record.overrideNote
+            ? `
+              <div>
+                <strong>Override Note</strong>
+                <p>${escapeHtml(record.overrideNote)}</p>
+              </div>
+            `
+            : ""
+        }
+      </div>
+    </article>
+  `;
+}
+
+function buildInterventionCapSummary() {
+  const student = getStudentById(dom.interventionStudentInput.value);
+  if (!student || !dom.interventionDateInput.value || !dom.interventionContentAreaInput.value) {
+    return null;
+  }
+
+  const xpValue = String(dom.interventionXpInput.value || "").trim();
+  const proposedXp = xpValue ? Number.parseInt(xpValue, 10) : 0;
+  return buildManualXpEntryAssessment({
+    student,
+    date: dom.interventionDateInput.value,
+    contentAreaId: dom.interventionContentAreaInput.value,
+    interventionCategory: dom.interventionCategoryInput.value,
+    proposedXp,
+  });
+}
+
+function updateInterventionCapSummary() {
+  if (!dom.interventionCapSummary) {
+    return;
+  }
+
+  const assessment = buildInterventionCapSummary();
+  if (!assessment || !dom.interventionCategoryInput.value.trim()) {
+    dom.interventionCapSummary.innerHTML =
+      `<div class="empty-inline">Choose a student, content area, intervention, and XP to preview the manual XP guardrails.</div>`;
+    dom.interventionCapWarning.textContent = "";
+    dom.interventionCapWarning.classList.remove("warning-text");
+    dom.interventionOverrideNoteField.classList.add("hidden");
+    dom.interventionOverrideNoteInput.required = false;
+    return;
+  }
+
+  dom.interventionCapSummary.innerHTML = renderCapSummaryMarkup(
+    {
+      used: assessment.projectedUsed,
+      cap: assessment.dailyCap,
+      percentUsed: assessment.percentUsed,
+      color: assessment.color,
+      remaining: assessment.remaining,
+      selectedGoal: assessment.selectedGoal,
+    },
+    "manual XP",
+  );
+  dom.interventionCapWarning.textContent = assessment.messages[0] || "";
+  dom.interventionCapWarning.classList.toggle(
+    "warning-text",
+    assessment.isSoftWarning || assessment.isHardWarning,
+  );
+  dom.interventionOverrideNoteField.classList.toggle("hidden", !assessment.requiresOverride);
+  dom.interventionOverrideNoteInput.required = assessment.requiresOverride;
+}
+
+function renderAnalytics() {
+  if (!dom.analyticsScreen) {
+    return;
+  }
+
+  const students = [...state.data.students].sort((left, right) => left.name.localeCompare(right.name));
+  const activeApps = state.data.apps.filter((app) => app.active);
+
+  dom.analyticsStudentSelect.innerHTML = [
+    `<option value="">All Students</option>`,
+    ...students.map(
+      (student) => `<option value="${escapeHtml(student.id)}">${escapeHtml(student.name)}</option>`,
+    ),
+  ].join("");
+  dom.analyticsStudentSelect.value = state.analytics.studentId;
+
+  dom.analyticsAreaAppFilter.innerHTML = [
+    `<option value="all">All Content Areas and Apps</option>`,
+    ...state.data.contentAreas
+      .filter((contentArea) => contentArea.active)
+      .sort((left, right) => left.name.localeCompare(right.name))
+      .map(
+        (contentArea) =>
+          `<option value="content:${escapeHtml(contentArea.id)}">${escapeHtml(contentArea.name)}</option>`,
+      ),
+    ...activeApps
+      .sort((left, right) => left.name.localeCompare(right.name))
+      .map(
+        (app) =>
+          `<option value="app:${escapeHtml(app.id)}">${escapeHtml(
+            `${getContentAreaById(app.contentAreaId)?.name || "Other"} | ${app.name}`,
+          )}</option>`,
+      ),
+  ].join("");
+  dom.analyticsAreaAppFilter.value = state.analytics.areaApp;
+
+  dom.analyticsLevelFilter.innerHTML = [
+    `<option value="all">All SOAR Levels</option>`,
+    ...[1, 2, 3, 4, 5, 6].map((level) => `<option value="${level}">Level ${level}</option>`),
+  ].join("");
+  dom.analyticsLevelFilter.value = String(state.analytics.level);
+
+  dom.analyticsGoalBandFilter.innerHTML = DAILY_AVERAGE_GOAL_BANDS.map(
+    (band) => `<option value="${escapeHtml(band.value)}">${escapeHtml(band.label)}</option>`,
+  ).join("");
+  dom.analyticsGoalBandFilter.value = state.analytics.goalBand;
+  dom.analyticsStartDateInput.value = state.analytics.startDate;
+  dom.analyticsEndDateInput.value = state.analytics.endDate;
+
+  const startDate = new Date(state.analytics.startDate);
+  const endDate = new Date(state.analytics.endDate);
+  if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime()) || startDate > endDate) {
+    dom.analyticsSummary.innerHTML = `<div class="empty-state">Choose a valid analytics date range.</div>`;
+    dom.analyticsHeatMap.innerHTML = "";
+    return;
+  }
+
+  const filteredStudents = students.filter((student) => {
+    if (state.analytics.studentId && student.id !== state.analytics.studentId) {
+      return false;
+    }
+    if (state.analytics.level !== "all" && getStudentAllotmentLevel(student) !== Number(state.analytics.level)) {
+      return false;
+    }
+    if (
+      state.analytics.goalBand !== "all"
+      && getGoalBandValue(getStudentDailyAverageGoal(student)) !== state.analytics.goalBand
+    ) {
+      return false;
+    }
+    return true;
+  });
+  const allowedStudentIds = new Set(filteredStudents.map((student) => student.id));
+  const filteredRecords = state.data.interventions.filter((record) => {
+    if (!allowedStudentIds.has(record.studentId)) {
+      return false;
+    }
+    if (!isDateWithinRange(record.date, state.analytics.startDate, state.analytics.endDate)) {
+      return false;
+    }
+    if (state.analytics.areaApp.startsWith("content:")) {
+      return record.contentAreaId === state.analytics.areaApp.replace("content:", "");
+    }
+    if (state.analytics.areaApp.startsWith("app:")) {
+      return record.appId === state.analytics.areaApp.replace("app:", "");
+    }
+    return true;
+  });
+
+  const dates = [];
+  for (let cursor = new Date(startDate); cursor <= endDate; cursor = addDays(cursor, 1)) {
+    dates.push(toIsoDate(cursor));
+  }
+
+  const rows = [];
+  const rowSeen = new Set();
+  filteredRecords.forEach((record) => {
+    const app = getAppById(record.appId);
+    const contentArea = getContentAreaById(record.contentAreaId);
+    const rowKey = app ? `app:${app.id}` : `content:${record.contentAreaId}`;
+    if (rowSeen.has(rowKey)) {
+      return;
+    }
+    rowSeen.add(rowKey);
+    rows.push({
+      key: rowKey,
+      label: app ? `${contentArea?.name || "Other"} | ${app.name}` : contentArea?.name || "Other",
+    });
+  });
+  rows.sort((left, right) => left.label.localeCompare(right.label));
+
+  const totalsByRow = new Map();
+  const totalsByIntervention = new Map();
+  const overCapDays = new Set();
+  let totalXp = 0;
+
+  filteredRecords.forEach((record) => {
+    const rowLabel = rows.find((row) =>
+      row.key.startsWith("app:")
+        ? row.key === `app:${record.appId}`
+        : row.key === `content:${record.contentAreaId}`,
+    )?.label || "Other";
+    totalsByRow.set(rowLabel, (totalsByRow.get(rowLabel) || 0) + Number(record.xpAwarded || 0));
+    totalsByIntervention.set(
+      record.interventionCategory,
+      (totalsByIntervention.get(record.interventionCategory) || 0) + Number(record.xpAwarded || 0),
+    );
+    totalXp += Number(record.xpAwarded || 0);
+
+    const student = getStudentById(record.studentId);
+    if (student) {
+      const snapshot = buildStudentManualXpSnapshot(student, record.date);
+      if (snapshot.used > snapshot.cap) {
+        overCapDays.add(`${student.id}:${record.date}`);
+      }
+    }
+  });
+
+  const topRow = [...totalsByRow.entries()].sort((left, right) => right[1] - left[1])[0] || null;
+  const topIntervention =
+    [...totalsByIntervention.entries()].sort((left, right) => right[1] - left[1])[0] || null;
+
+  dom.analyticsSummary.innerHTML = `
+    <div class="analytics-summary-grid">
+      <article class="metric-card">
+        <span class="metric-label">Manual XP Logged</span>
+        <strong>${totalXp}</strong>
+        <span class="metric-subtle">${filteredRecords.length} intervention entries</span>
+      </article>
+      <article class="metric-card">
+        <span class="metric-label">Over-Cap Days</span>
+        <strong>${overCapDays.size}</strong>
+        <span class="metric-subtle">Days finished above the daily allotment</span>
+      </article>
+      <article class="metric-card">
+        <span class="metric-label">Top App / Area</span>
+        <strong>${escapeHtml(topRow?.[0] || "None")}</strong>
+        <span class="metric-subtle">${
+          topRow && totalXp ? `${Math.round((topRow[1] / totalXp) * 100)}% of manual XP` : "No data"
+        }</span>
+      </article>
+      <article class="metric-card">
+        <span class="metric-label">Top Intervention</span>
+        <strong>${escapeHtml(topIntervention?.[0] || "None")}</strong>
+        <span class="metric-subtle">${
+          topIntervention && totalXp
+            ? `${Math.round((topIntervention[1] / totalXp) * 100)}% of manual XP`
+            : "No data"
+        }</span>
+      </article>
+    </div>
+    <div class="analytics-flags">
+      <p class="status-line ${topRow && totalXp && topRow[1] / totalXp >= 0.6 ? "warning-text" : ""}">
+        ${
+          topRow && totalXp && topRow[1] / totalXp >= 0.6
+            ? `${escapeHtml(topRow[0])} is carrying most of the current manual XP load.`
+            : "Manual XP is spread across multiple apps and content areas."
+        }
+      </p>
+      <p class="status-line ${topIntervention && totalXp && topIntervention[1] / totalXp >= 0.6 ? "warning-text" : ""}">
+        ${
+          topIntervention && totalXp && topIntervention[1] / totalXp >= 0.6
+            ? `${escapeHtml(topIntervention[0])} is dominating the intervention mix.`
+            : "No single intervention type is dominating the current filter range."
+        }
+      </p>
+    </div>
+  `;
+
+  if (!rows.length || !dates.length) {
+    dom.analyticsHeatMap.innerHTML = `<div class="empty-state">No manual XP records match the selected filters.</div>`;
+    return;
+  }
+
+  dom.analyticsHeatMap.innerHTML = `
+    <div class="heat-map-wrap">
+      <table class="heat-map-table">
+        <thead>
+          <tr>
+            <th scope="col">App / Content</th>
+            ${dates.map((date) => `<th scope="col">${escapeHtml(formatShortDate(date))}</th>`).join("")}
+          </tr>
+        </thead>
+        <tbody>
+          ${rows
+            .map((row) => {
+              const cells = dates
+                .map((date) => {
+                  const cellRecords = filteredRecords.filter((record) => {
+                    const rowMatches = row.key.startsWith("app:")
+                      ? record.appId === row.key.replace("app:", "")
+                      : record.contentAreaId === row.key.replace("content:", "");
+                    return rowMatches && record.date === date;
+                  });
+                  const total = sumManualXp(cellRecords);
+                  const capTotal = [...new Set(cellRecords.map((record) => record.studentId))]
+                    .map((studentId) => getStudentById(studentId))
+                    .filter(Boolean)
+                    .reduce((sum, student) => sum + getStudentDailyManualCap(student), 0);
+                  const percent = capTotal > 0 ? Math.round((total / capTotal) * 100) : 0;
+                  const toneClass =
+                    percent > 100
+                      ? "heat-pink"
+                      : percent === 100
+                        ? "heat-red"
+                        : percent >= 80
+                          ? "heat-yellow"
+                          : total > 0
+                            ? "heat-blue"
+                            : "heat-empty";
+                  return `
+                    <td
+                      class="heat-map-cell ${toneClass}"
+                      title="${escapeHtml(`${row.label} on ${date}: ${total} XP (${percent}% of daily cap)`)}"
+                    >
+                      <strong>${total || ""}</strong>
+                    </td>
+                  `;
+                })
+                .join("");
+
+              return `
+                <tr>
+                  <th scope="row">${escapeHtml(row.label)}</th>
+                  ${cells}
+                </tr>
+              `;
+            })
+            .join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function handleAnalyticsFilterChange() {
+  state.analytics.studentId = dom.analyticsStudentSelect.value;
+  state.analytics.startDate = dom.analyticsStartDateInput.value;
+  state.analytics.endDate = dom.analyticsEndDateInput.value;
+  state.analytics.areaApp = dom.analyticsAreaAppFilter.value;
+  state.analytics.level = dom.analyticsLevelFilter.value;
+  state.analytics.goalBand = dom.analyticsGoalBandFilter.value;
+  renderAnalytics();
 }
