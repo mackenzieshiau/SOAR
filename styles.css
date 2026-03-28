@@ -1014,3 +1014,80 @@ code {
 .heat-pink {
   background: #f9c6df;
 }
+
+.quick-link-grid,
+.group-chip-list,
+.roster-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.quick-link-tile {
+  display: grid;
+  gap: 12px;
+  min-width: 260px;
+  flex: 1 1 280px;
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+
+.quick-link-header,
+.quick-link-actions,
+.quick-add-group-row {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.quick-link-actions {
+  flex-wrap: wrap;
+}
+
+.quick-link-action-button,
+.group-chip,
+.roster-tab {
+  border-radius: 999px;
+}
+
+.roster-tab {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  padding: 10px 16px;
+  cursor: pointer;
+}
+
+.roster-tab.is-active {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent-strong);
+}
+
+.roster-tab-add,
+.group-chip {
+  background: var(--surface-soft);
+}
+
+.group-chip {
+  border: 1px solid var(--border);
+  padding: 10px 14px;
+  cursor: pointer;
+}
+
+.quick-link-action-editor {
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-soft);
+}
+
+@media (max-width: 720px) {
+  .quick-link-header,
+  .quick-add-group-row {
+    flex-direction: column;
+  }
+}

@@ -2,3 +2,4 @@ tmp/
 skills/
 .playwright-cli/
 output/
+node_modules/

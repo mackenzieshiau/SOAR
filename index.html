@@ -125,16 +125,6 @@
           </div>
         </header>
 
-        <section class="app-banner card" id="configBanner">
-          <div class="banner-copy">
-            <strong>Local SQLite mode is active.</strong>
-            <span class="muted">
-              SOAR Tracker now saves data locally on this machine using SQLite in
-              the browser.
-            </span>
-          </div>
-        </section>
-
         <main class="screen-stack">
           <section id="homeScreen" class="screen active">
             <div class="screen-header">
@@ -145,6 +135,23 @@
                 </p>
               </div>
             </div>
+
+            <section class="card quick-link-card">
+              <div class="section-title-row">
+                <div>
+                  <p class="eyebrow">Quick Actions</p>
+                  <h3>Quick Links</h3>
+                  <p class="muted">
+                    Save one-tap setups for individual students or groups, with up
+                    to three prefilled intervention actions on each tile.
+                  </p>
+                </div>
+                <button class="button button-primary" id="openQuickLinkButton" type="button">
+                  Add Quick Link
+                </button>
+              </div>
+              <div id="quickLinkGrid" class="quick-link-grid"></div>
+            </section>
 
             <section class="card quick-add-card">
               <div class="quick-add-header">
@@ -207,6 +214,15 @@
                       class="student-suggestion-list"
                       id="quickAddStudentSuggestions"
                     ></div>
+                    <div class="quick-add-group-row">
+                      <label class="field">
+                        <span>Add Group</span>
+                        <select id="quickAddGroupSelect"></select>
+                      </label>
+                      <button class="button button-secondary" id="addQuickAddGroupButton" type="button">
+                        Add Group
+                      </button>
+                    </div>
                     <div class="selected-student-list" id="quickAddSelectedStudents"></div>
                   </div>
 
@@ -262,6 +278,13 @@
               <div class="topbar-actions">
                 <button
                   class="button button-secondary"
+                  id="openAddGroupButton"
+                  type="button"
+                >
+                  Add Group
+                </button>
+                <button
+                  class="button button-secondary"
                   id="openSettingsFromQuickAddButton"
                   type="button"
                 >
@@ -309,6 +332,7 @@
               </div>
             </section>
 
+            <section class="roster-tabs" id="rosterTabs"></section>
             <section class="student-grid" id="studentGrid"></section>
           </section>
 
@@ -341,6 +365,7 @@
             <p class="status-line" id="studentStatusMessage"></p>
 
             <section class="profile-overview card" id="studentOverviewCard"></section>
+            <section class="card stack-md" id="studentGroupPanel"></section>
 
             <section class="card week-nav-card">
               <div class="week-nav">
@@ -763,6 +788,52 @@
       </form>
     </dialog>
 
+    <dialog class="modal" id="groupModal">
+      <form class="modal-card large-modal" id="groupForm" method="dialog">
+        <div class="modal-header">
+          <div>
+            <p class="eyebrow">Group</p>
+            <h3>Save Group</h3>
+          </div>
+          <button class="icon-button" type="button" data-close-modal="groupModal">
+            x
+          </button>
+        </div>
+        <input type="hidden" id="groupIdInput" />
+        <label class="field">
+          <span>Group Name</span>
+          <input id="groupNameInput" required />
+        </label>
+        <label class="field small-field">
+          <span>Student Search</span>
+          <input
+            id="groupStudentSearchInput"
+            type="search"
+            autocomplete="off"
+            placeholder="Search students to add"
+          />
+        </label>
+        <div class="student-suggestion-list" id="groupStudentSuggestions"></div>
+        <div class="selected-student-list" id="groupSelectedStudents"></div>
+        <div class="modal-grid">
+          <label class="field">
+            <span>Student Count</span>
+            <input id="groupStudentCountInput" readonly />
+          </label>
+          <label class="field">
+            <span>Notes</span>
+            <input id="groupNotesInput" placeholder="Optional details for this group" />
+          </label>
+        </div>
+        <div class="modal-actions">
+          <button class="button button-primary" type="submit">Save Group</button>
+          <button class="button button-secondary" type="button" data-close-modal="groupModal">
+            Cancel
+          </button>
+        </div>
+      </form>
+    </dialog>
+
     <dialog class="modal" id="interventionModal">
       <form class="modal-card large-modal" id="interventionForm" method="dialog">
         <div class="modal-header">
@@ -863,6 +934,58 @@
             type="button"
             data-close-modal="interventionModal"
           >
+            Cancel
+          </button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog class="modal" id="quickLinkModal">
+      <form class="modal-card large-modal" id="quickLinkForm" method="dialog">
+        <div class="modal-header">
+          <div>
+            <p class="eyebrow">Quick Link</p>
+            <h3>Save Quick Link</h3>
+          </div>
+          <button class="icon-button" type="button" data-close-modal="quickLinkModal">
+            x
+          </button>
+        </div>
+
+        <input type="hidden" id="quickLinkIdInput" />
+        <div class="modal-grid">
+          <label class="field">
+            <span>Tile Name</span>
+            <input id="quickLinkTitleInput" required />
+          </label>
+          <label class="field">
+            <span>Target Type</span>
+            <select id="quickLinkTargetTypeInput" required>
+              <option value="student">Select Student</option>
+              <option value="group">Make or Use Group</option>
+            </select>
+          </label>
+          <label class="field" id="quickLinkStudentField">
+            <span>Student</span>
+            <select id="quickLinkStudentInput"></select>
+          </label>
+          <label class="field hidden" id="quickLinkGroupField">
+            <span>Group</span>
+            <select id="quickLinkGroupInput"></select>
+          </label>
+        </div>
+
+        <div class="section-title-row">
+          <div>
+            <h4>Quick Actions</h4>
+            <p class="muted">Add one to three prefilled intervention actions.</p>
+          </div>
+        </div>
+        <div id="quickLinkActionsContainer" class="stack-md"></div>
+
+        <div class="modal-actions">
+          <button class="button button-primary" type="submit">Save Quick Link</button>
+          <button class="button button-secondary" type="button" data-close-modal="quickLinkModal">
             Cancel
           </button>
         </div>

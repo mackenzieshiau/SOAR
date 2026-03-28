@@ -118,6 +118,9 @@ const QUICK_ADD_INTERVENTION_CAP_KEYS = {
   "Task Cards": "focusOther",
   Other: "focusOther",
 };
+const STUDENT_GROUPS_SETTING_KEY = "studentGroups";
+const QUICK_LINKS_SETTING_KEY = "quickLinks";
+const QUICK_LINK_ACTION_LIMIT = 3;
 const APP_INTERVENTION_CAPS = {
   math: {
     mathVocabulary: 4,
@@ -160,6 +163,7 @@ function createQuickAddState() {
     date: toIsoDate(new Date()),
     contentAreaId: "",
     appId: "",
+    groupId: "",
     studentQuery: "",
     selectedStudentIds: [],
     locked: false,
@@ -168,6 +172,40 @@ function createQuickAddState() {
     studentEntries: {},
     statusMessage: "",
     statusTone: "neutral",
+  };
+}
+
+function createGroupDraft() {
+  return {
+    id: "",
+    name: "",
+    studentIds: [],
+    notes: "",
+    query: "",
+  };
+}
+
+function createQuickLinkAction(overrides = {}) {
+  return {
+    id: overrides.id || `action-${Math.random().toString(36).slice(2, 10)}`,
+    label: overrides.label || "",
+    contentAreaId: overrides.contentAreaId || "",
+    appId: overrides.appId || "",
+    interventionCategory: overrides.interventionCategory || "",
+    notes: overrides.notes || "",
+    xp: overrides.xp || "2",
+  };
+}
+
+function createQuickLinkDraft() {
+  return {
+    id: "",
+    title: "",
+    targetType: "student",
+    targetId: "",
+    actions: Array.from({ length: QUICK_LINK_ACTION_LIMIT }, (_, index) =>
+      createQuickLinkAction({ label: index === 0 ? "Action 1" : "" }),
+    ),
   };
 }
 
@@ -188,6 +226,8 @@ const state = {
     apps: [],
     studentAppAssignments: [],
     interventions: [],
+    groups: [],
+    quickLinks: [],
     guideUsers: [],
     authSettings: {},
   },
@@ -206,9 +246,12 @@ const state = {
   },
   selectedStudentId: null,
   assignmentStudentId: null,
+  rosterTab: { type: "all", id: "" },
   selectedWeekStart: getStartOfWeek(new Date()),
   activeScreen: "home",
   quickAdd: createQuickAddState(),
+  groupDraft: createGroupDraft(),
+  quickLinkDraft: createQuickLinkDraft(),
   session: null,
 };
 
@@ -238,6 +281,9 @@ const dom = {
   exportScreen: document.querySelector("#exportScreen"),
   openSettingsFromQuickAddButton: document.querySelector("#openSettingsFromQuickAddButton"),
   openAddStudentButton: document.querySelector("#openAddStudentButton"),
+  openAddGroupButton: document.querySelector("#openAddGroupButton"),
+  openQuickLinkButton: document.querySelector("#openQuickLinkButton"),
+  quickLinkGrid: document.querySelector("#quickLinkGrid"),
   quickAddSummaryChip: document.querySelector("#quickAddSummaryChip"),
   quickAddLockChip: document.querySelector("#quickAddLockChip"),
   quickAddTeacherSelect: document.querySelector("#quickAddTeacherSelect"),
@@ -248,6 +294,8 @@ const dom = {
   quickAddAppInput: document.querySelector("#quickAddAppInput"),
   quickAddStudentSearchInput: document.querySelector("#quickAddStudentSearchInput"),
   quickAddStudentSuggestions: document.querySelector("#quickAddStudentSuggestions"),
+  quickAddGroupSelect: document.querySelector("#quickAddGroupSelect"),
+  addQuickAddGroupButton: document.querySelector("#addQuickAddGroupButton"),
   quickAddSelectedStudents: document.querySelector("#quickAddSelectedStudents"),
   lockQuickAddButton: document.querySelector("#lockQuickAddButton"),
   clearQuickAddButton: document.querySelector("#clearQuickAddButton"),
@@ -260,6 +308,7 @@ const dom = {
   studentSearchInput: document.querySelector("#studentSearchInput"),
   bandFilterSelect: document.querySelector("#bandFilterSelect"),
   inactiveFilterInput: document.querySelector("#inactiveFilterInput"),
+  rosterTabs: document.querySelector("#rosterTabs"),
   studentGrid: document.querySelector("#studentGrid"),
   backToHomeButton: document.querySelector("#backToHomeButton"),
   studentProfileName: document.querySelector("#studentProfileName"),
@@ -267,6 +316,7 @@ const dom = {
   studentStatusSelect: document.querySelector("#studentStatusSelect"),
   studentStatusMessage: document.querySelector("#studentStatusMessage"),
   studentOverviewCard: document.querySelector("#studentOverviewCard"),
+  studentGroupPanel: document.querySelector("#studentGroupPanel"),
   openAddInterventionButton: document.querySelector("#openAddInterventionButton"),
   previousWeekButton: document.querySelector("#previousWeekButton"),
   nextWeekButton: document.querySelector("#nextWeekButton"),
@@ -274,6 +324,15 @@ const dom = {
   dailyAccordion: document.querySelector("#dailyAccordion"),
   studentModal: document.querySelector("#studentModal"),
   studentForm: document.querySelector("#studentForm"),
+  groupModal: document.querySelector("#groupModal"),
+  groupForm: document.querySelector("#groupForm"),
+  groupIdInput: document.querySelector("#groupIdInput"),
+  groupNameInput: document.querySelector("#groupNameInput"),
+  groupStudentSearchInput: document.querySelector("#groupStudentSearchInput"),
+  groupStudentSuggestions: document.querySelector("#groupStudentSuggestions"),
+  groupSelectedStudents: document.querySelector("#groupSelectedStudents"),
+  groupStudentCountInput: document.querySelector("#groupStudentCountInput"),
+  groupNotesInput: document.querySelector("#groupNotesInput"),
   studentIdInput: document.querySelector("#studentIdInput"),
   studentNameInput: document.querySelector("#studentNameInput"),
   studentBandInput: document.querySelector("#studentBandInput"),
@@ -284,6 +343,17 @@ const dom = {
   studentActiveInput: document.querySelector("#studentActiveInput"),
   interventionModal: document.querySelector("#interventionModal"),
   interventionForm: document.querySelector("#interventionForm"),
+  interventionIdInput: document.querySelector("#interventionIdInput"),
+  quickLinkModal: document.querySelector("#quickLinkModal"),
+  quickLinkForm: document.querySelector("#quickLinkForm"),
+  quickLinkIdInput: document.querySelector("#quickLinkIdInput"),
+  quickLinkTitleInput: document.querySelector("#quickLinkTitleInput"),
+  quickLinkTargetTypeInput: document.querySelector("#quickLinkTargetTypeInput"),
+  quickLinkStudentField: document.querySelector("#quickLinkStudentField"),
+  quickLinkStudentInput: document.querySelector("#quickLinkStudentInput"),
+  quickLinkGroupField: document.querySelector("#quickLinkGroupField"),
+  quickLinkGroupInput: document.querySelector("#quickLinkGroupInput"),
+  quickLinkActionsContainer: document.querySelector("#quickLinkActionsContainer"),
   interventionStudentInput: document.querySelector("#interventionStudentInput"),
   interventionDateInput: document.querySelector("#interventionDateInput"),
   interventionTeacherInput: document.querySelector("#interventionTeacherInput"),
@@ -398,6 +468,8 @@ function bindEvents() {
   dom.logoutButton.addEventListener("click", handleLogout);
   dom.openSettingsFromQuickAddButton.addEventListener("click", () => switchScreen("settings"));
   dom.openAddStudentButton.addEventListener("click", openStudentModal);
+  dom.openAddGroupButton.addEventListener("click", openGroupModal);
+  dom.openQuickLinkButton.addEventListener("click", openQuickLinkModal);
   dom.quickAddTeacherSelect.addEventListener("change", handleQuickAddTeacherChange);
   dom.quickAddTeacherOtherInput.addEventListener("input", (event) => {
     state.quickAdd.teacherOtherName = event.target.value;
@@ -419,6 +491,7 @@ function bindEvents() {
   });
   dom.quickAddStudentSearchInput.addEventListener("keydown", handleQuickAddStudentSearchKeydown);
   dom.quickAddStudentSuggestions.addEventListener("click", handleQuickAddSuggestionClick);
+  dom.addQuickAddGroupButton.addEventListener("click", handleQuickAddGroupAdd);
   dom.quickAddSelectedStudents.addEventListener("click", handleQuickAddSelectedStudentClick);
   dom.lockQuickAddButton.addEventListener("click", handleQuickAddLockToggle);
   dom.clearQuickAddButton.addEventListener("click", resetQuickAdd);
@@ -441,10 +514,14 @@ function bindEvents() {
     state.filters.includeInactive = dom.inactiveFilterInput.checked;
     renderStudents();
   });
+  dom.rosterTabs.addEventListener("click", handleRosterTabsClick);
   dom.studentGrid.addEventListener("click", handleStudentGridClick);
   dom.backToHomeButton.addEventListener("click", () => switchScreen("students"));
   dom.studentStatusSelect.addEventListener("change", handleStudentStatusChange);
   dom.studentOverviewCard.addEventListener("submit", handleStudentProfileConfigSubmit);
+  dom.studentOverviewCard.addEventListener("click", handleStudentOverviewClick);
+  dom.studentGroupPanel.addEventListener("click", handleStudentGroupPanelClick);
+  dom.dailyAccordion.addEventListener("click", handleDailyAccordionClick);
   dom.openAddInterventionButton.addEventListener("click", openInterventionModalForSelectedStudent);
   dom.previousWeekButton.addEventListener("click", () => {
     state.selectedWeekStart = addDays(state.selectedWeekStart, -7);
@@ -457,7 +534,27 @@ function bindEvents() {
     syncExportDefaults();
   });
   dom.studentForm.addEventListener("submit", handleStudentSubmit);
+  dom.groupForm.addEventListener("submit", handleGroupSubmit);
+  dom.groupNameInput.addEventListener("input", (event) => {
+    state.groupDraft.name = event.target.value;
+  });
+  dom.groupStudentSearchInput.addEventListener("input", handleGroupStudentSearchInput);
+  dom.groupNotesInput.addEventListener("input", (event) => {
+    state.groupDraft.notes = event.target.value;
+  });
+  dom.groupStudentSuggestions.addEventListener("click", handleGroupStudentSuggestionClick);
+  dom.groupSelectedStudents.addEventListener("click", handleGroupSelectedStudentClick);
   dom.interventionForm.addEventListener("submit", handleInterventionSubmit);
+  dom.quickLinkForm.addEventListener("submit", handleQuickLinkSubmit);
+  dom.quickLinkTitleInput.addEventListener("input", (event) => {
+    state.quickLinkDraft.title = event.target.value;
+  });
+  dom.quickLinkTargetTypeInput.addEventListener("change", syncQuickLinkTargetFields);
+  dom.quickLinkStudentInput.addEventListener("change", syncQuickLinkTargetFields);
+  dom.quickLinkGroupInput.addEventListener("change", syncQuickLinkTargetFields);
+  dom.quickLinkActionsContainer.addEventListener("input", handleQuickLinkActionsInput);
+  dom.quickLinkActionsContainer.addEventListener("change", handleQuickLinkActionsInput);
+  dom.quickLinkGrid.addEventListener("click", handleQuickLinkGridClick);
   dom.interventionContentAreaInput.addEventListener("change", updateInterventionAppOptions);
   dom.interventionStudentInput.addEventListener("change", updateInterventionAppOptions);
   dom.interventionStudentInput.addEventListener("change", updateInterventionCapSummary);
@@ -588,17 +685,65 @@ function showAppOnly() {
 }
 
 function syncConfigBanner() {
-  dom.configBanner.classList.remove("hidden");
+  if (dom.configBanner) {
+    dom.configBanner.classList.add("hidden");
+  }
+}
+
+function parseStoredCollection(key, fallback = []) {
+  try {
+    const rawValue = state.data.authSettings[key];
+    if (!rawValue) {
+      return fallback;
+    }
+    const parsed = JSON.parse(rawValue);
+    return Array.isArray(parsed) ? parsed : fallback;
+  } catch (error) {
+    console.warn(`Unable to parse stored collection for ${key}.`, error);
+    return fallback;
+  }
 }
 
 async function refreshData() {
   try {
     state.data = await state.service.loadAll();
+    state.data.groups = parseStoredCollection(STUDENT_GROUPS_SETTING_KEY, [])
+      .map((group) => ({
+        id: String(group.id || ""),
+        name: String(group.name || ""),
+        studentIds: Array.isArray(group.studentIds) ? group.studentIds.map(String) : [],
+        notes: String(group.notes || ""),
+        createdAt: group.createdAt || "",
+        updatedAt: group.updatedAt || "",
+      }))
+      .filter((group) => group.id && group.name);
+    state.data.quickLinks = parseStoredCollection(QUICK_LINKS_SETTING_KEY, [])
+      .map((quickLink) => ({
+        id: String(quickLink.id || ""),
+        title: String(quickLink.title || ""),
+        targetType: quickLink.targetType === "group" ? "group" : "student",
+        targetId: String(quickLink.targetId || ""),
+        actions: Array.isArray(quickLink.actions)
+          ? quickLink.actions
+              .slice(0, QUICK_LINK_ACTION_LIMIT)
+              .map((action) => createQuickLinkAction(action))
+          : [],
+        createdAt: quickLink.createdAt || "",
+        updatedAt: quickLink.updatedAt || "",
+      }))
+      .filter((quickLink) => quickLink.id && quickLink.title);
     syncSessionAfterDataLoad();
     const activeStudents = getActiveStudents();
 
     if (!activeStudents.some((student) => student.id === state.selectedStudentId)) {
       state.selectedStudentId = activeStudents[0]?.id || null;
+    }
+
+    if (
+      state.rosterTab.type === "group"
+      && !state.data.groups.some((group) => group.id === state.rosterTab.id)
+    ) {
+      state.rosterTab = { type: "all", id: "" };
     }
 
     if (!activeStudents.some((student) => student.id === state.assignmentStudentId)) {
@@ -634,6 +779,7 @@ function safeRender(label, renderFn) {
 }
 
 function renderHome() {
+  renderQuickLinks();
   renderQuickAdd();
 }
 
@@ -642,8 +788,11 @@ function renderStudents() {
   const currentWeekStart = getStartOfWeek(new Date());
   const currentWeekEnd = addDays(currentWeekStart, 6);
   dom.inactiveFilterInput.checked = state.filters.includeInactive;
+  renderRosterTabs();
+  const visibleStudentIds = getVisibleRosterStudentIds();
   const students = [...state.data.students]
     .filter((student) => state.filters.includeInactive || student.active)
+    .filter((student) => !visibleStudentIds || visibleStudentIds.has(student.id))
     .sort((left, right) => left.name.localeCompare(right.name))
     .filter((student) => {
       const matchesSearch = student.name.toLowerCase().includes(state.filters.search);
@@ -710,6 +859,34 @@ function renderStudents() {
       `;
 }
 
+function renderRosterTabs() {
+  const tabs = [
+    `<button class="roster-tab ${state.rosterTab.type === "all" ? "is-active" : ""}" type="button" data-tab-type="all" data-tab-id="">Full Roster</button>`,
+    ...getGroups().map(
+      (group) => `
+        <button
+          class="roster-tab ${state.rosterTab.type === "group" && state.rosterTab.id === group.id ? "is-active" : ""}"
+          type="button"
+          data-tab-type="group"
+          data-tab-id="${escapeHtml(group.id)}"
+        >
+          ${escapeHtml(group.name)}
+        </button>
+      `,
+    ),
+    `<button class="roster-tab roster-tab-add" type="button" data-tab-type="add-group" data-tab-id="">+ Add Group</button>`,
+  ];
+  dom.rosterTabs.innerHTML = tabs.join("");
+}
+
+function getVisibleRosterStudentIds() {
+  if (state.rosterTab.type !== "group" || !state.rosterTab.id) {
+    return null;
+  }
+  const group = getGroupById(state.rosterTab.id);
+  return group ? new Set(group.studentIds) : null;
+}
+
 function renderQuickAdd() {
   syncQuickAddState();
 
@@ -723,7 +900,10 @@ function renderQuickAdd() {
     .map((studentId) => getStudentById(studentId))
     .filter(Boolean);
   const selectionCount = selectedStudents.length;
-  const selectionLabel = `${selectionCount} student${selectionCount === 1 ? "" : "s"} selected`;
+  const group = getGroupById(state.quickAdd.groupId);
+  const selectionLabel = group
+    ? `${selectionCount} students from ${group.name}`
+    : `${selectionCount} student${selectionCount === 1 ? "" : "s"} selected`;
   const teacherOptions = [
     ...QUICK_ADD_TEACHER_OPTIONS.map((teacherName) => ({
       value: teacherName,
@@ -751,6 +931,14 @@ function renderQuickAdd() {
   dom.quickAddSummaryChip.textContent = selectionLabel;
   dom.quickAddLockChip.textContent = state.quickAdd.locked ? "Setup locked" : "Setup unlocked";
   dom.quickAddLockChip.classList.toggle("accent-chip", state.quickAdd.locked);
+  const groups = getGroups();
+  dom.quickAddGroupSelect.innerHTML = [
+    `<option value="">Select a group</option>`,
+    ...groups.map(
+      (item) => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.name)}</option>`,
+    ),
+  ].join("");
+  dom.quickAddGroupSelect.value = group?.id || "";
 
   dom.quickAddContentAreaInput.innerHTML = contentAreas.length
     ? contentAreas
@@ -797,6 +985,8 @@ function renderQuickAdd() {
   dom.quickAddContentAreaInput.disabled = setupDisabled || !contentAreas.length;
   dom.quickAddAppInput.disabled = setupDisabled || !appOptions.length;
   dom.quickAddStudentSearchInput.disabled = setupDisabled;
+  dom.quickAddGroupSelect.disabled = setupDisabled || groups.length === 0;
+  dom.addQuickAddGroupButton.disabled = setupDisabled || groups.length === 0 || !dom.quickAddGroupSelect.value;
   dom.lockQuickAddButton.textContent = setupDisabled ? "Unlock Setup" : "Lock Setup";
   dom.quickAddInterventionInput.disabled = !setupDisabled || !selectionCount;
   dom.quickAddCustomInterventionInput.disabled = !setupDisabled || !showCustomIntervention;
@@ -833,6 +1023,7 @@ function renderQuickAddStudentPicker() {
   const selectedStudents = state.quickAdd.selectedStudentIds
     .map((studentId) => getStudentById(studentId))
     .filter(Boolean);
+  const selectedGroup = getGroupById(state.quickAdd.groupId);
 
   dom.quickAddSelectedStudents.innerHTML = selectedStudents.length
     ? selectedStudents
@@ -841,7 +1032,11 @@ function renderQuickAddStudentPicker() {
             <div class="selected-student-chip">
               <div>
                 <strong>${escapeHtml(student.name)}</strong>
-                <small>${escapeHtml(`WIDA ${student.widaLevel}`)}</small>
+                <small>${escapeHtml(
+                  selectedGroup
+                    ? `${selectedGroup.name} | WIDA ${student.widaLevel}`
+                    : `WIDA ${student.widaLevel}`,
+                )}</small>
               </div>
               <button
                 class="icon-button"
@@ -967,6 +1162,83 @@ function renderQuickAddStudentRows() {
     : `<div class="empty-state">Add students to create quick intervention entries.</div>`;
 }
 
+function renderQuickLinks() {
+  const quickLinks = [...state.data.quickLinks];
+  dom.quickLinkGrid.innerHTML = quickLinks.length
+    ? quickLinks
+        .map((quickLink) => {
+          const targetLabel =
+            quickLink.targetType === "group"
+              ? getGroupById(quickLink.targetId)?.name || "Group"
+              : getStudentById(quickLink.targetId)?.name || "Student";
+          return `
+            <article class="quick-link-tile">
+              <div class="quick-link-header">
+                <div>
+                  <p class="eyebrow">${quickLink.targetType === "group" ? "Group" : "Student"}</p>
+                  <h4>${escapeHtml(quickLink.title)}</h4>
+                  <p class="muted">${escapeHtml(targetLabel)}</p>
+                </div>
+                <button class="button button-ghost" type="button" data-action="edit-quick-link" data-quick-link-id="${escapeHtml(quickLink.id)}">
+                  Edit
+                </button>
+              </div>
+              <div class="quick-link-actions">
+                ${quickLink.actions
+                  .filter((action) => action.label || action.interventionCategory)
+                  .map(
+                    (action) => `
+                      <button
+                        class="button button-secondary quick-link-action-button"
+                        type="button"
+                        data-action="apply-quick-link-action"
+                        data-quick-link-id="${escapeHtml(quickLink.id)}"
+                        data-quick-link-action-id="${escapeHtml(action.id)}"
+                      >
+                        ${escapeHtml(action.label || action.interventionCategory)}
+                      </button>
+                    `,
+                  )
+                  .join("")}
+              </div>
+            </article>
+          `;
+        })
+        .join("")
+    : `<div class="empty-state">No quick links saved yet.</div>`;
+}
+
+function renderStudentGroupPanel(student) {
+  const groups = getGroupsForStudent(student?.id || "");
+  dom.studentGroupPanel.innerHTML = student
+    ? `
+        <div class="section-title-row">
+          <div>
+            <p class="eyebrow">Groups</p>
+            <h3>Roster Groups</h3>
+            <p class="muted">Create and update reusable student groups here.</p>
+          </div>
+          <button class="button button-secondary" type="button" data-action="create-group-for-student" data-student-id="${escapeHtml(student.id)}">
+            Add Group
+          </button>
+        </div>
+        ${
+          groups.length
+            ? `<div class="group-chip-list">${groups
+                .map(
+                  (group) => `
+                    <button class="group-chip" type="button" data-action="edit-group" data-group-id="${escapeHtml(group.id)}">
+                      ${escapeHtml(group.name)} (${group.studentIds.length})
+                    </button>
+                  `,
+                )
+                .join("")}</div>`
+            : `<div class="empty-state">This student is not in a saved group yet.</div>`
+        }
+      `
+    : `<div class="empty-state">No student selected.</div>`;
+}
+
 function legacyRenderStudentProfile1() {
   const student = getStudentById(state.selectedStudentId);
   if (!student) {
@@ -976,6 +1248,7 @@ function legacyRenderStudentProfile1() {
     dom.studentStatusSelect.disabled = true;
     setStatus(dom.studentStatusMessage, "", "neutral");
     dom.studentOverviewCard.innerHTML = `<div class="empty-state">No student selected.</div>`;
+    renderStudentGroupPanel(null);
     dom.dailyAccordion.innerHTML = "";
     return;
   }
@@ -1170,6 +1443,7 @@ function legacyBuildInterventionCapSummary1() {
     contentAreaId: dom.interventionContentAreaInput.value,
     interventionCategory: dom.interventionCategoryInput.value,
     proposedXp,
+    excludeInterventionId: dom.interventionIdInput.value,
   });
 }
 
@@ -1452,6 +1726,12 @@ function legacyAddQuickAddStudent1(studentId) {
 
   if (!state.quickAdd.selectedStudentIds.includes(studentId)) {
     state.quickAdd.selectedStudentIds = [...state.quickAdd.selectedStudentIds, studentId];
+  }
+  if (state.quickAdd.groupId) {
+    const group = getGroupById(state.quickAdd.groupId);
+    if (!group || !group.studentIds.includes(studentId)) {
+      state.quickAdd.groupId = "";
+    }
   }
 
   state.quickAdd.studentEntries[studentId] = state.quickAdd.studentEntries[studentId] || {
@@ -2806,6 +3086,23 @@ function switchScreen(screen) {
   syncNavigationState();
 }
 
+function handleRosterTabsClick(event) {
+  const button = event.target.closest("[data-tab-type]");
+  if (!button) {
+    return;
+  }
+  const tabType = button.getAttribute("data-tab-type");
+  if (tabType === "add-group") {
+    openGroupModal();
+    return;
+  }
+  state.rosterTab = {
+    type: tabType === "group" ? "group" : "all",
+    id: button.getAttribute("data-tab-id") || "",
+  };
+  renderStudents();
+}
+
 function handleStudentGridClick(event) {
   const button = event.target.closest("[data-action='open-student']");
   if (!button) {
@@ -2822,6 +3119,25 @@ function handleStudentGridClick(event) {
   renderStudentProfile();
   syncExportDefaults();
   switchScreen("student");
+}
+
+function handleStudentOverviewClick(event) {
+  const button = event.target.closest("[data-action='edit-group']");
+  if (button) {
+    openGroupModal(button.getAttribute("data-group-id"));
+  }
+}
+
+function handleStudentGroupPanelClick(event) {
+  const createButton = event.target.closest("[data-action='create-group-for-student']");
+  if (createButton) {
+    openGroupModal("", createButton.getAttribute("data-student-id"));
+    return;
+  }
+  const editButton = event.target.closest("[data-action='edit-group']");
+  if (editButton) {
+    openGroupModal(editButton.getAttribute("data-group-id"));
+  }
 }
 
 async function handleStudentStatusChange() {
@@ -2870,6 +3186,94 @@ function openStudentModal() {
   dom.studentModal.showModal();
 }
 
+function openGroupModal(groupId = "", initialStudentId = "") {
+  const group = getGroupById(groupId);
+  state.groupDraft = group
+    ? {
+        id: group.id,
+        name: group.name,
+        studentIds: [...group.studentIds],
+        notes: group.notes || "",
+        query: "",
+      }
+    : createGroupDraft();
+  if (initialStudentId && !state.groupDraft.studentIds.includes(initialStudentId)) {
+    state.groupDraft.studentIds.push(initialStudentId);
+  }
+  renderGroupDraft();
+  dom.groupModal.showModal();
+}
+
+function renderGroupDraft() {
+  const suggestions = getActiveStudents()
+    .filter((student) => !state.groupDraft.studentIds.includes(student.id))
+    .filter((student) => student.name.toLowerCase().includes(state.groupDraft.query.toLowerCase()))
+    .slice(0, 12);
+  const selectedStudents = state.groupDraft.studentIds
+    .map((studentId) => getStudentById(studentId))
+    .filter(Boolean);
+  dom.groupIdInput.value = state.groupDraft.id;
+  dom.groupNameInput.value = state.groupDraft.name;
+  dom.groupStudentSearchInput.value = state.groupDraft.query;
+  dom.groupNotesInput.value = state.groupDraft.notes;
+  dom.groupStudentCountInput.value = String(selectedStudents.length);
+  dom.groupStudentSuggestions.innerHTML = suggestions.length
+    ? suggestions
+        .map(
+          (student) => `
+            <button class="suggestion-chip" type="button" data-action="add-group-student" data-student-id="${escapeHtml(student.id)}">
+              <span>${escapeHtml(student.name)}</span>
+              <small>${escapeHtml(`${student.band} | ${student.gradeBand}`)}</small>
+            </button>
+          `,
+        )
+        .join("")
+    : `<div class="empty-inline">No matching students.</div>`;
+  dom.groupSelectedStudents.innerHTML = selectedStudents.length
+    ? selectedStudents
+        .map(
+          (student) => `
+            <div class="selected-student-chip">
+              <div>
+                <strong>${escapeHtml(student.name)}</strong>
+                <small>${escapeHtml(`${student.band} | ${student.gradeBand}`)}</small>
+              </div>
+              <button class="icon-button" type="button" data-action="remove-group-student" data-student-id="${escapeHtml(student.id)}">x</button>
+            </div>
+          `,
+        )
+        .join("")
+    : `<div class="empty-inline">No students added yet.</div>`;
+}
+
+function handleGroupStudentSearchInput(event) {
+  state.groupDraft.query = event.target.value;
+  renderGroupDraft();
+}
+
+function handleGroupStudentSuggestionClick(event) {
+  const button = event.target.closest("[data-action='add-group-student']");
+  if (!button) {
+    return;
+  }
+  const studentId = button.getAttribute("data-student-id");
+  if (!state.groupDraft.studentIds.includes(studentId)) {
+    state.groupDraft.studentIds.push(studentId);
+  }
+  state.groupDraft.query = "";
+  renderGroupDraft();
+}
+
+function handleGroupSelectedStudentClick(event) {
+  const button = event.target.closest("[data-action='remove-group-student']");
+  if (!button) {
+    return;
+  }
+  const studentId = button.getAttribute("data-student-id");
+  state.groupDraft.studentIds = state.groupDraft.studentIds.filter((currentId) => currentId !== studentId);
+  renderGroupDraft();
+}
+
 async function handleStudentSubmit(event) {
   event.preventDefault();
 
@@ -2893,6 +3297,244 @@ async function handleStudentSubmit(event) {
     console.error(error);
     window.alert(`Unable to save student.\n\n${readableError(error)}`);
   }
+}
+
+async function handleGroupSubmit(event) {
+  event.preventDefault();
+  const groupName = dom.groupNameInput.value.trim();
+  const studentIds = [...new Set(state.groupDraft.studentIds)].filter((studentId) => getStudentById(studentId));
+  if (!groupName) {
+    dom.groupNameInput.focus();
+    return;
+  }
+  if (!studentIds.length) {
+    dom.groupStudentSearchInput.focus();
+    return;
+  }
+  const now = new Date().toISOString();
+  const nextGroup = {
+    id: state.groupDraft.id || `group-${crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2, 10)}`,
+    name: groupName,
+    studentIds,
+    notes: dom.groupNotesInput.value.trim(),
+    createdAt: getGroupById(state.groupDraft.id)?.createdAt || now,
+    updatedAt: now,
+  };
+  const otherGroups = state.data.groups.filter((group) => group.id !== nextGroup.id);
+  await saveGroups([...otherGroups, nextGroup]);
+  dom.groupModal.close();
+  await refreshData();
+}
+
+function openQuickLinkModal(quickLinkId = "") {
+  const quickLink = state.data.quickLinks.find((item) => item.id === quickLinkId);
+  state.quickLinkDraft = quickLink
+    ? {
+        id: quickLink.id,
+        title: quickLink.title,
+        targetType: quickLink.targetType,
+        targetId: quickLink.targetId,
+        actions: Array.from({ length: QUICK_LINK_ACTION_LIMIT }, (_, index) =>
+          createQuickLinkAction(
+            quickLink.actions[index] || { label: index === 0 ? `Action ${index + 1}` : "" },
+          ),
+        ),
+      }
+    : createQuickLinkDraft();
+  renderQuickLinkDraft();
+  dom.quickLinkModal.showModal();
+}
+
+function renderQuickLinkDraft() {
+  const activeStudents = getActiveStudents();
+  const groups = getGroups();
+  dom.quickLinkIdInput.value = state.quickLinkDraft.id;
+  dom.quickLinkTitleInput.value = state.quickLinkDraft.title;
+  dom.quickLinkTargetTypeInput.value = state.quickLinkDraft.targetType;
+  dom.quickLinkStudentInput.innerHTML = activeStudents
+    .map((student) => `<option value="${escapeHtml(student.id)}">${escapeHtml(student.name)}</option>`)
+    .join("");
+  dom.quickLinkGroupInput.innerHTML = groups
+    .map((group) => `<option value="${escapeHtml(group.id)}">${escapeHtml(group.name)}</option>`)
+    .join("");
+  if (state.quickLinkDraft.targetType === "student" && activeStudents.length) {
+    dom.quickLinkStudentInput.value = state.quickLinkDraft.targetId || activeStudents[0].id;
+  }
+  if (state.quickLinkDraft.targetType === "group" && groups.length) {
+    dom.quickLinkGroupInput.value = state.quickLinkDraft.targetId || groups[0].id;
+  }
+  syncQuickLinkTargetFields();
+  dom.quickLinkActionsContainer.innerHTML = state.quickLinkDraft.actions
+    .map((action, index) => renderQuickLinkActionFields(action, index))
+    .join("");
+}
+
+function renderQuickLinkActionFields(action, index) {
+  const contentAreas = getQuickAddContentAreas();
+  const selectedContentAreaId = action.contentAreaId || contentAreas[0]?.id || "";
+  const appOptions = getQuickAddAppOptions(selectedContentAreaId, []);
+  return `
+    <section class="quick-link-action-editor">
+      <div class="section-title-row">
+        <div>
+          <h4>Action ${index + 1}</h4>
+        </div>
+      </div>
+      <div class="modal-grid">
+        <label class="field">
+          <span>Button Label</span>
+          <input data-action-index="${index}" data-action-field="label" value="${escapeHtml(action.label)}" placeholder="Circle Time" />
+        </label>
+        <label class="field">
+          <span>Content Area</span>
+          <select data-action-index="${index}" data-action-field="contentAreaId">
+            ${contentAreas
+              .map(
+                (contentArea) => `<option value="${escapeHtml(contentArea.id)}" ${contentArea.id === selectedContentAreaId ? "selected" : ""}>${escapeHtml(contentArea.name)}</option>`,
+              )
+              .join("")}
+          </select>
+        </label>
+        <label class="field">
+          <span>Suggested App</span>
+          <select data-action-index="${index}" data-action-field="appId">
+            ${appOptions
+              .map(
+                (app) => `<option value="${escapeHtml(app.id)}" ${app.id === action.appId ? "selected" : ""}>${escapeHtml(app.name)}</option>`,
+              )
+              .join("")}
+          </select>
+        </label>
+        <label class="field">
+          <span>Intervention</span>
+          <input data-action-index="${index}" data-action-field="interventionCategory" value="${escapeHtml(action.interventionCategory)}" placeholder="Circle Time" />
+        </label>
+        <label class="field small-field">
+          <span>XP</span>
+          <input data-action-index="${index}" data-action-field="xp" type="number" min="0" step="1" value="${escapeHtml(String(action.xp || "2"))}" />
+        </label>
+      </div>
+      <label class="field">
+        <span>Other Notes</span>
+        <textarea rows="2" data-action-index="${index}" data-action-field="notes" placeholder="Prompting, suggested app usage, or delivery notes">${escapeHtml(action.notes)}</textarea>
+      </label>
+    </section>
+  `;
+}
+
+function syncQuickLinkTargetFields() {
+  const targetType = dom.quickLinkTargetTypeInput.value === "group" ? "group" : "student";
+  state.quickLinkDraft.targetType = targetType;
+  dom.quickLinkStudentField.classList.toggle("hidden", targetType !== "student");
+  dom.quickLinkGroupField.classList.toggle("hidden", targetType !== "group");
+  state.quickLinkDraft.targetId =
+    targetType === "group" ? dom.quickLinkGroupInput.value : dom.quickLinkStudentInput.value;
+}
+
+function handleQuickLinkActionsInput(event) {
+  const index = Number.parseInt(event.target.getAttribute("data-action-index") || "", 10);
+  const field = event.target.getAttribute("data-action-field");
+  if (!Number.isInteger(index) || !field) {
+    return;
+  }
+  state.quickLinkDraft.actions[index] = {
+    ...state.quickLinkDraft.actions[index],
+    [field]: event.target.value,
+  };
+  if (field === "contentAreaId") {
+    const currentAction = state.quickLinkDraft.actions[index];
+    currentAction.appId = getQuickAddAppOptions(currentAction.contentAreaId, [])[0]?.id || "";
+    renderQuickLinkDraft();
+  }
+}
+
+async function handleQuickLinkSubmit(event) {
+  event.preventDefault();
+  state.quickLinkDraft.title = dom.quickLinkTitleInput.value.trim();
+  state.quickLinkDraft.targetType = dom.quickLinkTargetTypeInput.value === "group" ? "group" : "student";
+  state.quickLinkDraft.targetId =
+    state.quickLinkDraft.targetType === "group"
+      ? dom.quickLinkGroupInput.value
+      : dom.quickLinkStudentInput.value;
+  const actions = state.quickLinkDraft.actions
+    .map((action) => ({
+      ...action,
+      label: String(action.label || "").trim(),
+      interventionCategory: String(action.interventionCategory || "").trim(),
+      notes: String(action.notes || "").trim(),
+      xp: String(action.xp || "2").trim() || "2",
+    }))
+    .filter((action) => action.label || action.interventionCategory);
+  if (!state.quickLinkDraft.title || !state.quickLinkDraft.targetId || actions.length === 0) {
+    return;
+  }
+  const now = new Date().toISOString();
+  const nextQuickLink = {
+    id: state.quickLinkDraft.id || `quick-link-${crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2, 10)}`,
+    title: state.quickLinkDraft.title,
+    targetType: state.quickLinkDraft.targetType,
+    targetId: state.quickLinkDraft.targetId,
+    actions,
+    createdAt: state.data.quickLinks.find((item) => item.id === state.quickLinkDraft.id)?.createdAt || now,
+    updatedAt: now,
+  };
+  const otherQuickLinks = state.data.quickLinks.filter((item) => item.id !== nextQuickLink.id);
+  await saveQuickLinks([...otherQuickLinks, nextQuickLink]);
+  dom.quickLinkModal.close();
+  await refreshData();
+}
+
+function handleQuickLinkGridClick(event) {
+  const editButton = event.target.closest("[data-action='edit-quick-link']");
+  if (editButton) {
+    openQuickLinkModal(editButton.getAttribute("data-quick-link-id"));
+    return;
+  }
+  const actionButton = event.target.closest("[data-action='apply-quick-link-action']");
+  if (!actionButton) {
+    return;
+  }
+  const quickLink = state.data.quickLinks.find(
+    (item) => item.id === actionButton.getAttribute("data-quick-link-id"),
+  );
+  if (!quickLink) {
+    return;
+  }
+  const action = quickLink.actions.find(
+    (item) => item.id === actionButton.getAttribute("data-quick-link-action-id"),
+  );
+  if (!action) {
+    return;
+  }
+  applyQuickLinkAction(quickLink, action);
+}
+
+function applyQuickLinkAction(quickLink, action) {
+  resetQuickAddState(true);
+  state.quickAdd.date = toIsoDate(new Date());
+  state.quickAdd.contentAreaId = action.contentAreaId;
+  state.quickAdd.appId = action.appId;
+  state.quickAdd.groupId = quickLink.targetType === "group" ? quickLink.targetId : "";
+  state.quickAdd.selectedStudentIds =
+    quickLink.targetType === "group"
+      ? getGroupById(quickLink.targetId)?.studentIds || []
+      : [quickLink.targetId];
+  state.quickAdd.studentEntries = Object.fromEntries(
+    state.quickAdd.selectedStudentIds.map((studentId) => [
+      studentId,
+      {
+        notes: action.notes || "",
+        xp: String(action.xp || "2"),
+      },
+    ]),
+  );
+  state.quickAdd.intervention = QUICK_ADD_CUSTOM_VALUE;
+  state.quickAdd.customIntervention = action.interventionCategory || action.label;
+  state.quickAdd.locked = true;
+  state.quickAdd.statusMessage = `Loaded ${quickLink.title}. Review the entries and save when ready.`;
+  state.quickAdd.statusTone = "success";
+  switchScreen("home");
+  renderHome();
 }
 
 function handleQuickAddContentAreaChange(event) {
@@ -2948,6 +3590,12 @@ function handleQuickAddSelectedStudentClick(event) {
     (currentId) => currentId !== studentId,
   );
   delete state.quickAdd.studentEntries[studentId];
+  if (state.quickAdd.groupId) {
+    const group = getGroupById(state.quickAdd.groupId);
+    if (!group || group.studentIds.some((groupStudentId) => groupStudentId === studentId)) {
+      state.quickAdd.groupId = "";
+    }
+  }
   state.quickAdd.intervention = "";
   clearQuickAddStatus();
   renderQuickAdd();
@@ -3049,6 +3697,7 @@ async function handleQuickAddSave() {
   }
 
   const timestamp = new Date().toISOString();
+  const selectedGroup = getGroupById(state.quickAdd.groupId);
   const entries = state.quickAdd.selectedStudentIds.map((studentId) => {
     const studentEntry = state.quickAdd.studentEntries[studentId] || { notes: "", xp: "" };
     const rawXp = String(studentEntry.xp ?? "").trim();
@@ -3070,6 +3719,7 @@ async function handleQuickAddSave() {
       evidenceOfProduction: notes || interventionName,
       repeatedInNewContext: false,
       newContextNote: "",
+      groupName: selectedGroup?.name || "",
     };
   });
 
@@ -3132,6 +3782,32 @@ function addQuickAddStudent(studentId) {
   dom.quickAddStudentSearchInput.focus();
 }
 
+function handleQuickAddGroupAdd() {
+  addQuickAddGroup(dom.quickAddGroupSelect.value);
+}
+
+function addQuickAddGroup(groupId) {
+  if (!groupId || state.quickAdd.locked) {
+    return;
+  }
+  const group = getGroupById(groupId);
+  if (!group) {
+    return;
+  }
+
+  state.quickAdd.groupId = group.id;
+  state.quickAdd.selectedStudentIds = [...new Set(group.studentIds)];
+  state.quickAdd.studentEntries = Object.fromEntries(
+    state.quickAdd.selectedStudentIds.map((studentId) => [
+      studentId,
+      state.quickAdd.studentEntries[studentId] || { notes: "", xp: "" },
+    ]),
+  );
+  state.quickAdd.studentQuery = "";
+  clearQuickAddStatus();
+  renderQuickAdd();
+}
+
 function resetQuickAddState(preserveTeacher = false) {
   const nextState = createQuickAddState();
   if (preserveTeacher) {
@@ -3167,16 +3843,52 @@ function openInterventionModalForSelectedStudent() {
   openInterventionModal(state.selectedStudentId);
 }
 
-function openInterventionModal(studentId = null) {
+function buildInterventionTimestamp(dateValue, existingTimestamp = "") {
+  const date = parseIsoDate(dateValue) || new Date();
+  const timeSource = existingTimestamp ? new Date(existingTimestamp) : new Date();
+  date.setHours(
+    timeSource.getHours(),
+    timeSource.getMinutes(),
+    timeSource.getSeconds(),
+    timeSource.getMilliseconds(),
+  );
+  return date.toISOString();
+}
+
+function openInterventionModal(studentId = null, interventionId = "") {
   dom.interventionForm.reset();
-  populateStudentOptions(studentId);
+  const record = state.data.interventions.find((item) => item.id === interventionId) || null;
+  populateStudentOptions(record?.studentId || studentId);
   populateContentAreaOptions();
-  dom.interventionDateInput.value = toIsoDate(new Date());
-  dom.interventionTeacherInput.value = getDefaultTeacherName();
-  dom.interventionRepeatedInput.value = "false";
+  dom.interventionIdInput.value = record?.id || "";
+  dom.interventionDateInput.value = record?.date || toIsoDate(new Date());
+  dom.interventionTeacherInput.value = record?.teacherName || getDefaultTeacherName();
+  dom.interventionRepeatedInput.value = record?.repeatedInNewContext ? "true" : "false";
+  dom.interventionOverrideNoteInput.value = record?.overrideNote || "";
+  dom.interventionCategoryInput.value = record?.interventionCategory || "";
+  dom.interventionTaskDetailInput.value = record?.taskDetail || "";
+  dom.interventionXpInput.value = record ? String(record.xpAwarded) : "";
+  dom.interventionNotesInput.value = record?.notes || "";
+  dom.interventionEvidenceInput.value = record?.evidenceOfProduction || "";
+  dom.interventionNewContextInput.value = record?.newContextNote || "";
+  if (record?.contentAreaId) {
+    dom.interventionContentAreaInput.value = record.contentAreaId;
+  }
   syncNewContextField();
   updateInterventionAppOptions();
+  if (record?.appId) {
+    dom.interventionAppInput.value = record.appId;
+  }
+  updateInterventionCapSummary();
   dom.interventionModal.showModal();
+}
+
+function handleDailyAccordionClick(event) {
+  const editButton = event.target.closest("[data-action='edit-intervention']");
+  if (!editButton) {
+    return;
+  }
+  openInterventionModal(state.selectedStudentId, editButton.getAttribute("data-intervention-id"));
 }
 
 function syncNewContextField() {
@@ -3191,11 +3903,46 @@ function syncNewContextField() {
 async function handleInterventionSubmit(event) {
   event.preventDefault();
 
+  const assessment = buildInterventionCapSummary();
+  if (assessment?.isHardWarning && assessment.color === "red") {
+    const shouldContinue = window.confirm(
+      `This entry will place the student exactly at their daily manual XP allotment of ${assessment.dailyCap}. Continue?`,
+    );
+    if (!shouldContinue) {
+      return;
+    }
+  }
+
+  if (assessment && assessment.requiresOverride && !dom.interventionOverrideNoteInput.value.trim()) {
+    dom.interventionOverrideNoteInput.focus();
+    window.alert("Add an override note before saving an over-cap manual XP entry.");
+    return;
+  }
+
+  if (
+    assessment
+    && (
+      (assessment.blockCap !== null && assessment.projectedBlockUsed > assessment.blockCap)
+      || (assessment.categoryCap !== null && assessment.projectedCategoryUsed > assessment.categoryCap)
+      || (
+        assessment.miniTotalCap !== null
+        && assessment.projectedMiniTotalUsed > assessment.miniTotalCap
+      )
+    )
+  ) {
+    window.alert(assessment.messages[assessment.messages.length - 1] || "This entry exceeds a subject-level cap.");
+    return;
+  }
+
   try {
     await state.service.saveIntervention({
+      id: dom.interventionIdInput.value || undefined,
       studentId: dom.interventionStudentInput.value,
       date: dom.interventionDateInput.value,
-      timestamp: new Date().toISOString(),
+      timestamp: buildInterventionTimestamp(
+        dom.interventionDateInput.value,
+        state.data.interventions.find((item) => item.id === dom.interventionIdInput.value)?.timestamp || "",
+      ),
       teacherName: dom.interventionTeacherInput.value,
       contentAreaId: dom.interventionContentAreaInput.value,
       appId: dom.interventionAppInput.value,
@@ -3206,6 +3953,8 @@ async function handleInterventionSubmit(event) {
       evidenceOfProduction: dom.interventionEvidenceInput.value,
       repeatedInNewContext: dom.interventionRepeatedInput.value === "true",
       newContextNote: dom.interventionNewContextInput.value,
+      overrideNote: dom.interventionOverrideNoteInput.value.trim(),
+      groupName: state.data.interventions.find((item) => item.id === dom.interventionIdInput.value)?.groupName || "",
     });
 
     state.selectedStudentId = dom.interventionStudentInput.value;
@@ -3516,6 +4265,7 @@ function buildExportRows({ studentId, startDate, endDate }) {
         date: record.date,
         timestamp: formatDateTime(record.timestamp),
         teacherName: record.teacherName,
+        groupName: record.groupName || "",
         contentArea: contentAreaMap.get(record.contentAreaId)?.name || "",
         app: appMap.get(record.appId)?.name || "",
         interventionCategory: record.interventionCategory,
@@ -3731,6 +4481,35 @@ function getActiveStudents() {
   return [...state.data.students]
     .filter((student) => student.active)
     .sort((left, right) => left.name.localeCompare(right.name));
+}
+
+function getGroups() {
+  return [...state.data.groups].sort((left, right) => left.name.localeCompare(right.name));
+}
+
+function getGroupById(groupId) {
+  return state.data.groups.find((group) => group.id === groupId) || null;
+}
+
+function getGroupStudents(group) {
+  if (!group) {
+    return [];
+  }
+  return group.studentIds
+    .map((studentId) => getStudentById(studentId))
+    .filter((student) => student && student.active);
+}
+
+function getGroupsForStudent(studentId) {
+  return getGroups().filter((group) => group.studentIds.includes(studentId));
+}
+
+async function saveGroups(groups) {
+  await state.service.saveAppSetting(STUDENT_GROUPS_SETTING_KEY, JSON.stringify(groups));
+}
+
+async function saveQuickLinks(quickLinks) {
+  await state.service.saveAppSetting(QUICK_LINKS_SETTING_KEY, JSON.stringify(quickLinks));
 }
 
 function getStudentById(studentId) {
@@ -4097,6 +4876,9 @@ function getQuickAddStudentMatchRank(student, normalizedQuery) {
 function syncQuickAddState() {
   syncQuickAddTeacherDefault();
   const validStudentIds = new Set(getActiveStudents().map((student) => student.id));
+  if (state.quickAdd.groupId && !getGroupById(state.quickAdd.groupId)) {
+    state.quickAdd.groupId = "";
+  }
   state.quickAdd.selectedStudentIds = state.quickAdd.selectedStudentIds.filter((studentId) =>
     validStudentIds.has(studentId),
   );
@@ -4283,6 +5065,7 @@ function toCsv(rows) {
     "date",
     "timestamp",
     "teacherName",
+    "groupName",
     "contentArea",
     "app",
     "interventionCategory",
@@ -4311,10 +5094,11 @@ function toExcelHtml(rows) {
       band: "",
       gradeBand: "",
       widaLevel: "",
-      date: "",
-      timestamp: "",
-      teacherName: "",
-      contentArea: "",
+        date: "",
+        timestamp: "",
+        teacherName: "",
+        groupName: "",
+        contentArea: "",
       app: "",
       interventionCategory: "",
       taskDetail: "",
@@ -4511,6 +5295,7 @@ function renderStudentProfile() {
       </div>
     </div>
   `;
+  renderStudentGroupPanel(student);
 
   dom.weekRangeLabel.textContent = formatDateRange(
     state.selectedWeekStart,
@@ -4595,16 +5380,31 @@ function renderInterventionCard(record, contentAreaMap, appMap) {
   const app = appMap.get(record.appId)?.name || "Unknown";
 
   return `
-    <article class="intervention-card stack-sm">
+    <article class="intervention-card stack-sm" data-intervention-id="${escapeHtml(record.id)}">
       <div class="record-toolbar">
         <span class="inline-badge">${escapeHtml(formatTime(record.timestamp))}</span>
-        <span class="xp-pill">XP ${record.xpAwarded}</span>
+        <div class="record-toolbar">
+          <span class="xp-pill">XP ${record.xpAwarded}</span>
+          <button class="button button-secondary" type="button" data-action="edit-intervention" data-intervention-id="${escapeHtml(record.id)}">
+            Edit
+          </button>
+        </div>
       </div>
       <div class="record-grid">
         <div>
           <strong>Teacher</strong>
           <p>${escapeHtml(record.teacherName)}</p>
         </div>
+        ${
+          record.groupName
+            ? `
+              <div>
+                <strong>Group</strong>
+                <p>${escapeHtml(record.groupName)}</p>
+              </div>
+            `
+            : ""
+        }
         <div>
           <strong>Content Area</strong>
           <p>${escapeHtml(contentArea)}</p>

@@ -56,6 +56,7 @@ const SQLITE_SCHEMA = `
     xp_awarded integer not null,
     notes text,
     evidence_of_production text not null,
+    group_name text,
     repeated_in_new_context integer not null default 0,
     new_context_note text,
     override_note text,
@@ -178,6 +179,7 @@ function mapInterventions(rows) {
     xpAwarded: Number(row.xp_awarded),
     notes: row.notes || "",
     evidenceOfProduction: row.evidence_of_production,
+    groupName: row.group_name || "",
     repeatedInNewContext: toBoolean(row.repeated_in_new_context),
     newContextNote: row.new_context_note || "",
     overrideNote: row.override_note || "",
@@ -290,6 +292,9 @@ class SQLiteDataService {
     if (!interventionColumns.has("override_note")) {
       this.run("alter table interventions add column override_note text");
     }
+    if (!interventionColumns.has("group_name")) {
+      this.run("alter table interventions add column group_name text");
+    }
   }
 
   seedDatabase() {
@@ -398,6 +403,7 @@ class SQLiteDataService {
             xp_awarded,
             notes,
             evidence_of_production,
+            group_name,
             repeated_in_new_context,
             new_context_note,
             override_note,
@@ -416,6 +422,7 @@ class SQLiteDataService {
             $xpAwarded,
             $notes,
             $evidenceOfProduction,
+            $groupName,
             $repeatedInNewContext,
             $newContextNote,
             $overrideNote,
@@ -435,6 +442,7 @@ class SQLiteDataService {
           $xpAwarded: intervention.xpAwarded,
           $notes: intervention.notes,
           $evidenceOfProduction: intervention.evidenceOfProduction,
+          $groupName: intervention.groupName || "",
           $repeatedInNewContext: toDbBoolean(intervention.repeatedInNewContext),
           $newContextNote: intervention.newContextNote,
           $overrideNote: intervention.overrideNote || "",
@@ -786,6 +794,7 @@ class SQLiteDataService {
               xp_awarded = $xpAwarded,
               notes = $notes,
               evidence_of_production = $evidenceOfProduction,
+              group_name = $groupName,
               repeated_in_new_context = $repeatedInNewContext,
               new_context_note = $newContextNote,
               override_note = $overrideNote
@@ -804,6 +813,7 @@ class SQLiteDataService {
           $xpAwarded: Number(intervention.xpAwarded),
           $notes: intervention.notes?.trim() || "",
           $evidenceOfProduction: intervention.evidenceOfProduction.trim(),
+          $groupName: intervention.groupName?.trim() || "",
           $repeatedInNewContext: toDbBoolean(intervention.repeatedInNewContext),
           $newContextNote: intervention.newContextNote?.trim() || "",
           $overrideNote: intervention.overrideNote?.trim() || "",
@@ -825,6 +835,7 @@ class SQLiteDataService {
             xp_awarded,
             notes,
             evidence_of_production,
+            group_name,
             repeated_in_new_context,
             new_context_note,
             override_note,
@@ -843,6 +854,7 @@ class SQLiteDataService {
             $xpAwarded,
             $notes,
             $evidenceOfProduction,
+            $groupName,
             $repeatedInNewContext,
             $newContextNote,
             $overrideNote,
@@ -862,6 +874,7 @@ class SQLiteDataService {
           $xpAwarded: Number(intervention.xpAwarded),
           $notes: intervention.notes?.trim() || "",
           $evidenceOfProduction: intervention.evidenceOfProduction.trim(),
+          $groupName: intervention.groupName?.trim() || "",
           $repeatedInNewContext: toDbBoolean(intervention.repeatedInNewContext),
           $newContextNote: intervention.newContextNote?.trim() || "",
           $overrideNote: intervention.overrideNote?.trim() || "",
