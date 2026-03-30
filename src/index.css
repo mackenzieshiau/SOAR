@@ -1,0 +1,60 @@
+@import "tailwindcss";
+
+:root {
+  color-scheme: light;
+  --app-navy: 15 31 58;
+  --app-navy-2: 29 46 84;
+  --app-lilac: 139 92 246;
+  --app-lilac-soft: 237 233 254;
+  --app-ink: 15 23 42;
+  --app-surface: 255 255 255;
+  --app-border: 226 232 240;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: "Aptos", "Segoe UI", "Trebuchet MS", sans-serif;
+  color: rgb(var(--app-ink));
+  background:
+    radial-gradient(circle at top left, rgba(var(--app-lilac), 0.16), transparent 28%),
+    radial-gradient(circle at top right, rgba(var(--app-navy), 0.12), transparent 26%),
+    linear-gradient(180deg, #f5f7ff 0%, #eef2ff 40%, #f8fafc 100%);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+::selection {
+  background: rgba(var(--app-lilac), 0.2);
+}
+
+.app-glass {
+  backdrop-filter: blur(18px);
+  background: rgba(255, 255, 255, 0.8);
+}
+
+.app-surface {
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid rgba(var(--app-border), 0.9);
+  box-shadow: 0 20px 60px -40px rgba(var(--app-navy), 0.55);
+}
+
+.app-grid-bg {
+  background-image:
+    linear-gradient(rgba(var(--app-navy), 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(var(--app-navy), 0.03) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+@media (max-width: 767px) {
+  body {
+    font-size: 15px;
+  }
+}

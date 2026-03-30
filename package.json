@@ -1,0 +1,38 @@
+{
+  "name": "soar-tracker",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1 --port 8123",
+    "build": "vite build",
+    "preview": "vite preview --host 127.0.0.1 --port 8123",
+    "test:unit": "node --test ./tests/unit/**/*.test.mjs",
+    "test:functional": "npm run build && node ./scripts/run-full-functional-test.mjs --root dist --base-url http://127.0.0.1:4173",
+    "test": "npm run test:unit && npm run test:functional",
+    "predeploy": "npm run test",
+    "deploy": "git push origin main"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.2.2",
+    "@vitejs/plugin-react": "^6.0.1",
+    "autoprefixer": "^10.4.27",
+    "playwright": "^1.52.0",
+    "postcss": "^8.5.8",
+    "tailwindcss": "^4.2.2",
+    "vite": "^8.0.3"
+  },
+  "dependencies": {
+    "@radix-ui/react-accordion": "^1.2.12",
+    "@radix-ui/react-dialog": "^1.1.15",
+    "@radix-ui/react-slot": "^1.2.4",
+    "@radix-ui/react-tabs": "^1.1.13",
+    "@tailwindcss/vite": "^4.2.2",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "lucide-react": "^1.7.0",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "sql.js": "^1.14.1",
+    "tailwind-merge": "^3.5.0"
+  }
+}

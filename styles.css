@@ -17,7 +17,7 @@
   --radius-md: 12px;
   --radius-sm: 10px;
   --shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
-  --container: 1220px;
+  --container: 1400px;
 }
 
 * {
@@ -57,7 +57,7 @@ textarea {
 
 .app-shell {
   min-height: 100dvh;
-  padding: 20px;
+  padding: 28px;
 }
 
 .login-screen,
@@ -243,19 +243,20 @@ textarea {
   display: grid;
   grid-template-columns: 1fr auto;
   gap: 16px;
-  align-items: end;
+  align-items: center;
 }
 
 .card.stack-md,
 .filter-card,
 .quick-add-card,
+.quick-link-card,
 .profile-overview,
 .week-nav-card,
 #exportScreen .card,
 .settings-grid > .card,
 #adminOnlySettings,
 #settingsAccessNotice {
-  padding: 22px;
+  padding: 28px;
 }
 
 .profile-header-actions {
@@ -403,8 +404,8 @@ textarea {
 
 .student-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 14px;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 18px;
 }
 
 .student-tile,
@@ -446,12 +447,12 @@ textarea {
 
 .quick-add-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1.08fr) minmax(320px, 0.92fr);
-  gap: 18px;
+  grid-template-columns: minmax(0, 1.12fr) minmax(380px, 0.88fr);
+  gap: 24px;
 }
 
 .quick-add-panel {
-  padding: 16px;
+  padding: 22px;
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   background: var(--surface-soft);
@@ -739,7 +740,7 @@ textarea {
 }
 
 .modal {
-  width: min(920px, calc(100vw - 24px));
+  width: min(1080px, calc(100vw - 32px));
   border: none;
   padding: 0;
   background: transparent;
@@ -751,13 +752,13 @@ textarea {
 
 .modal-card {
   width: 100%;
-  padding: 24px;
+  padding: 30px;
   display: grid;
-  gap: 16px;
+  gap: 20px;
 }
 
 .large-modal {
-  width: min(880px, calc(100vw - 24px));
+  width: min(1040px, calc(100vw - 32px));
 }
 
 .large-modal .modal-grid {
@@ -822,6 +823,7 @@ code {
 
   .login-card,
   .filter-card,
+  .quick-link-card,
   .quick-add-card,
   .profile-overview,
   .week-nav-card,
@@ -1020,18 +1022,22 @@ code {
 .roster-tabs {
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
+  gap: 16px;
 }
 
 .quick-link-tile {
   display: grid;
-  gap: 12px;
-  min-width: 260px;
-  flex: 1 1 280px;
-  padding: 18px;
+  gap: 16px;
+  min-width: 300px;
+  flex: 1 1 320px;
+  padding: 22px;
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   background: var(--surface);
+}
+
+.quick-link-grid > .empty-state {
+  width: 100%;
 }
 
 .quick-link-header,
@@ -1039,7 +1045,7 @@ code {
 .quick-add-group-row {
   display: flex;
   gap: 12px;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
 }
 
@@ -1079,15 +1085,28 @@ code {
 }
 
 .quick-link-action-editor {
-  padding: 16px;
+  padding: 20px;
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   background: var(--surface-soft);
 }
 
+.inline-action-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.inline-action-row > select,
+.inline-action-row > input {
+  flex: 1 1 auto;
+}
+
 @media (max-width: 720px) {
   .quick-link-header,
-  .quick-add-group-row {
+  .quick-add-group-row,
+  .inline-action-row {
     flex-direction: column;
+    align-items: stretch;
   }
 }

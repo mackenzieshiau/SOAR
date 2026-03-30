@@ -1,3 +1,6 @@
+import initSqlJs from "sql.js";
+import sqlWasmUrl from "sql.js/dist/sql-wasm.wasm?url";
+
 import { buildDemoSeed, DEFAULT_APPS, DEFAULT_CONTENT_AREAS } from "./seed-data.js";
 
 const DB_STORAGE_KEY = "soar-tracker-sqlite-db";
@@ -209,12 +212,8 @@ class SQLiteDataService {
   }
 
   async initialize() {
-    if (!window.initSqlJs) {
-      throw new Error("The local SQLite engine could not be loaded.");
-    }
-
-    this.SQL = await window.initSqlJs({
-      locateFile: (file) => `./vendor/${file}`,
+    this.SQL = await initSqlJs({
+      locateFile: () => sqlWasmUrl,
     });
 
     const persisted = localStorage.getItem(DB_STORAGE_KEY);

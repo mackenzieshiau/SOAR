@@ -1,0 +1,982 @@
+﻿<div class="app-shell">
+      <main class="login-screen" id="loginScreen">
+        <section class="login-card card">
+          <div class="login-heading">
+            <p class="eyebrow">Teacher Intervention Logging</p>
+            <h1>SOAR Tracker</h1>
+            <p class="muted">
+              Use the shared teacher code or sign in as an admin or guide.
+            </p>
+          </div>
+
+          <div class="login-panels">
+            <form
+              id="loginForm"
+              class="login-panel stack-md"
+              onsubmit="return window.soarFallbackTeacherLogin(event)"
+            >
+              <div>
+                <h2>Teacher Access</h2>
+                <p class="muted">Use the shared code for quick student logging.</p>
+              </div>
+              <label class="field">
+                <span>Access Code</span>
+                <input
+                  id="accessCodeInput"
+                  name="accessCode"
+                  type="password"
+                  inputmode="text"
+                  maxlength="12"
+                  minlength="4"
+                  autocomplete="off"
+                  required
+                />
+              </label>
+              <button class="button button-primary button-lg" type="submit">
+                Continue
+              </button>
+              <p class="status-line" id="loginStatus"></p>
+            </form>
+
+            <form id="staffLoginForm" class="login-panel stack-md">
+              <div>
+                <h2>Admin or Guide</h2>
+                <p class="muted">
+                  Use a username and password for managed access.
+                </p>
+              </div>
+              <label class="field">
+                <span>Username</span>
+                <input
+                  id="staffUsernameInput"
+                  name="username"
+                  autocomplete="username"
+                  required
+                />
+              </label>
+              <label class="field">
+                <span>Password</span>
+                <input
+                  id="staffPasswordInput"
+                  name="password"
+                  type="password"
+                  autocomplete="current-password"
+                  required
+                />
+              </label>
+              <button class="button button-secondary button-lg" type="submit">
+                Sign In
+              </button>
+              <p class="status-line" id="staffLoginStatus"></p>
+            </form>
+          </div>
+        </section>
+      </main>
+
+      <div id="appRoot" class="app-root hidden">
+        <header class="topbar">
+          <div class="brand-lockup">
+            <p class="eyebrow">Weekly Intervention Tracker</p>
+            <h1>SOAR Tracker</h1>
+            <p class="brand-note">Fast daily intervention logging for teachers.</p>
+          </div>
+          <div class="topbar-right">
+            <div class="session-chip" id="sessionChip"></div>
+            <div class="topbar-actions">
+              <button class="button button-secondary" id="homeButton" type="button">
+                Homepage
+              </button>
+              <button class="button button-secondary" id="studentsButton" type="button">
+                Students
+              </button>
+              <button
+                class="button button-secondary"
+                id="settingsButton"
+                type="button"
+              >
+                Settings
+              </button>
+              <button class="button button-secondary" id="analyticsButton" type="button">
+                Heat Map
+              </button>
+              <button class="button button-secondary" id="exportButton" type="button">
+                Export
+              </button>
+              <button class="button button-ghost" id="logoutButton" type="button">
+                Log Out
+              </button>
+            </div>
+          </div>
+        </header>
+
+        <main class="screen-stack">
+          <section id="homeScreen" class="screen active">
+            <div class="screen-header">
+              <div>
+                <h2>Homepage</h2>
+                <p class="muted">
+                  Quick-add interventions here for fast daily logging.
+                </p>
+              </div>
+            </div>
+
+            <section class="card quick-link-card">
+              <div class="section-title-row">
+                <div>
+                  <p class="eyebrow">Quick Actions</p>
+                  <h3>Quick Links</h3>
+                  <p class="muted">
+                    Save one-tap setups for individual students or groups, with up
+                    to three prefilled intervention actions on each tile.
+                  </p>
+                </div>
+                <button class="button button-primary" id="openQuickLinkButton" type="button">
+                  Add Quick Link
+                </button>
+              </div>
+              <div id="quickLinkGrid" class="quick-link-grid"></div>
+            </section>
+
+            <section class="card quick-add-card">
+              <div class="quick-add-header">
+                <div>
+                  <p class="eyebrow">Quick Adds</p>
+                  <h3>Log one intervention for multiple students</h3>
+                  <p class="muted">
+                    Choose the content area, add students, lock the setup, then enter
+                    notes and XP for each student. Blank XP saves as 2.
+                  </p>
+                </div>
+                <div class="quick-add-summary">
+                  <span class="inline-badge" id="quickAddSummaryChip">
+                    0 students selected
+                  </span>
+                  <span class="meta-pill" id="quickAddLockChip">Setup unlocked</span>
+                </div>
+              </div>
+
+              <div class="quick-add-layout">
+                <section class="quick-add-panel stack-md">
+                  <div class="quick-add-grid">
+                    <label class="field">
+                      <span>Teacher Name</span>
+                      <select id="quickAddTeacherSelect"></select>
+                    </label>
+                    <label class="field hidden" id="quickAddTeacherOtherField">
+                      <span>Other Teacher</span>
+                      <input
+                        id="quickAddTeacherOtherInput"
+                        autocomplete="name"
+                        placeholder="Enter teacher name"
+                      />
+                    </label>
+                    <label class="field">
+                      <span>Date</span>
+                      <input id="quickAddDateInput" type="date" />
+                    </label>
+                    <label class="field">
+                      <span>Content Area</span>
+                      <select id="quickAddContentAreaInput"></select>
+                    </label>
+                    <label class="field">
+                      <span>Suggested App</span>
+                      <select id="quickAddAppInput"></select>
+                    </label>
+                  </div>
+
+                  <div class="student-picker stack-sm">
+                    <label class="field">
+                      <span>Add Students</span>
+                      <input
+                        id="quickAddStudentSearchInput"
+                        type="search"
+                        autocomplete="off"
+                        placeholder="Start typing a student name"
+                      />
+                    </label>
+                    <div
+                      class="student-suggestion-list"
+                      id="quickAddStudentSuggestions"
+                    ></div>
+                    <div class="quick-add-group-row">
+                      <label class="field">
+                        <span>Add Group</span>
+                        <select id="quickAddGroupSelect"></select>
+                      </label>
+                      <button class="button button-secondary" id="addQuickAddGroupButton" type="button">
+                        Add Group
+                      </button>
+                    </div>
+                    <div class="selected-student-list" id="quickAddSelectedStudents"></div>
+                  </div>
+
+                  <div class="quick-add-toolbar">
+                    <button class="button button-primary" id="lockQuickAddButton" type="button">
+                      Lock Setup
+                    </button>
+                    <button class="button button-ghost" id="clearQuickAddButton" type="button">
+                      Clear
+                    </button>
+                  </div>
+                </section>
+
+                <section class="quick-add-panel quick-add-detail-panel stack-md">
+                  <label class="field">
+                    <span>Intervention</span>
+                    <select id="quickAddInterventionInput"></select>
+                  </label>
+
+                  <label class="field hidden" id="quickAddCustomInterventionField">
+                    <span>Custom Intervention</span>
+                    <input
+                      id="quickAddCustomInterventionInput"
+                      placeholder="Enter the intervention name"
+                    />
+                  </label>
+
+                  <div class="quick-add-student-rows" id="quickAddStudentRows"></div>
+
+                  <div class="quick-add-footer">
+                    <p class="status-line" id="quickAddStatus"></p>
+                    <button
+                      class="button button-primary button-lg"
+                      id="saveQuickAddButton"
+                      type="button"
+                    >
+                      Save Entries
+                    </button>
+                  </div>
+                </section>
+              </div>
+            </section>
+          </section>
+
+          <section id="studentsScreen" class="screen hidden">
+            <div class="screen-header">
+              <div>
+                <h2>Students</h2>
+                <p class="muted">
+                  Browse student summaries and open weekly intervention logs.
+                </p>
+              </div>
+              <div class="topbar-actions">
+                <button
+                  class="button button-secondary"
+                  id="openAddGroupButton"
+                  type="button"
+                >
+                  Add Group
+                </button>
+                <button
+                  class="button button-secondary"
+                  id="openSettingsFromQuickAddButton"
+                  type="button"
+                >
+                  Manage Content
+                </button>
+                <button
+                  class="button button-primary button-lg"
+                  id="openAddStudentButton"
+                  type="button"
+                >
+                  Add Student
+                </button>
+              </div>
+            </div>
+
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">Student Directory</p>
+                <h3>Open weekly logs</h3>
+              </div>
+            </div>
+
+            <section class="card filter-card">
+              <div class="filter-grid">
+                <label class="field">
+                  <span>Search Student</span>
+                  <input
+                    type="search"
+                    id="studentSearchInput"
+                    placeholder="Search by name"
+                  />
+                </label>
+                <label class="field">
+                  <span>Band</span>
+                  <select id="bandFilterSelect">
+                    <option value="all">All Bands</option>
+                    <option value="K-2">K-2</option>
+                    <option value="3-6">3-6</option>
+                  </select>
+                </label>
+                <label class="toggle-field filter-toggle">
+                  <input id="inactiveFilterInput" type="checkbox" />
+                  <span>Inactive</span>
+                </label>
+              </div>
+            </section>
+
+            <section class="roster-tabs" id="rosterTabs"></section>
+            <section class="student-grid" id="studentGrid"></section>
+          </section>
+
+          <section id="studentProfileScreen" class="screen hidden">
+            <div class="screen-header">
+              <div>
+                <button class="text-button" id="backToHomeButton" type="button">
+                  Back to Students
+                </button>
+                <h2 id="studentProfileName">Student Profile</h2>
+                <p class="muted" id="studentProfileSummary"></p>
+              </div>
+              <div class="profile-header-actions">
+                <label class="field profile-status-field">
+                  <span>Status</span>
+                  <select id="studentStatusSelect">
+                    <option value="active">Active</option>
+                    <option value="inactive">Inactive</option>
+                  </select>
+                </label>
+                <button
+                  class="button button-primary button-lg"
+                  id="openAddInterventionButton"
+                  type="button"
+                >
+                  Add Intervention
+                </button>
+              </div>
+            </div>
+            <p class="status-line" id="studentStatusMessage"></p>
+
+            <section class="profile-overview card" id="studentOverviewCard"></section>
+            <section class="card stack-md" id="studentGroupPanel"></section>
+
+            <section class="card week-nav-card">
+              <div class="week-nav">
+                <button
+                  class="button button-secondary"
+                  id="previousWeekButton"
+                  type="button"
+                >
+                  Previous Week
+                </button>
+                <div>
+                  <p class="eyebrow">Selected Week</p>
+                  <h3 id="weekRangeLabel"></h3>
+                </div>
+                <button class="button button-secondary" id="nextWeekButton" type="button">
+                  Next Week
+                </button>
+              </div>
+            </section>
+
+            <section id="dailyAccordion" class="accordion-list"></section>
+          </section>
+
+          <section id="settingsScreen" class="screen hidden">
+            <div class="screen-header">
+              <div>
+                <h2>Settings</h2>
+                <p class="muted">
+                  Manage admin access, guide logins, content areas, apps, and student assignments.
+                </p>
+              </div>
+            </div>
+
+            <section class="card stack-md admin-managed-section" id="adminOnlySettings">
+              <div class="section-title-row">
+                <div>
+                  <h3>Admin Access</h3>
+                  <p class="muted">
+                    Manage guide logins and change the admin password.
+                  </p>
+                </div>
+              </div>
+
+              <div class="settings-grid">
+                <section class="settings-subsection stack-md">
+                  <div>
+                    <h4>Admin Password</h4>
+                    <p class="muted">Admin username is fixed as <code>admin</code>.</p>
+                  </div>
+                  <form id="adminPasswordForm" class="inline-form">
+                    <label class="field">
+                      <span>New Admin Password</span>
+                      <input id="adminPasswordInput" type="password" minlength="4" required />
+                    </label>
+                    <label class="field">
+                      <span>Confirm Password</span>
+                      <input
+                        id="adminPasswordConfirmInput"
+                        type="password"
+                        minlength="4"
+                        required
+                      />
+                    </label>
+                    <button class="button button-primary" type="submit">
+                      Update Password
+                    </button>
+                  </form>
+                  <p id="adminPasswordStatus" class="status-line"></p>
+                </section>
+
+                <section class="settings-subsection stack-md">
+                  <div class="section-title-row">
+                    <div>
+                      <h4>Guide Logins</h4>
+                      <p class="muted">
+                        Create, update, activate, and deactivate guide access.
+                      </p>
+                    </div>
+                  </div>
+                  <form id="guideForm" class="inline-form">
+                    <input type="hidden" id="guideIdInput" />
+                    <label class="field">
+                      <span>Username</span>
+                      <input id="guideUsernameInput" autocomplete="off" required />
+                    </label>
+                    <label class="field">
+                      <span>Password</span>
+                      <input
+                        id="guidePasswordInput"
+                        type="password"
+                        minlength="4"
+                        autocomplete="new-password"
+                        placeholder="Keep current password"
+                      />
+                    </label>
+                    <label class="toggle-field">
+                      <input id="guideActiveInput" type="checkbox" checked />
+                      <span>Active</span>
+                    </label>
+                    <button class="button button-primary" type="submit">
+                      Save Guide
+                    </button>
+                    <button class="button button-ghost" type="button" id="resetGuideButton">
+                      Clear
+                    </button>
+                  </form>
+                  <p class="field-note">
+                    Leave the password blank while editing a guide to keep the current password.
+                  </p>
+                  <p id="guideStatus" class="status-line"></p>
+                  <div id="guideList" class="stack-sm"></div>
+                </section>
+              </div>
+            </section>
+
+            <div class="settings-grid admin-managed-section">
+              <section class="card stack-md">
+                <div class="section-title-row">
+                  <div>
+                    <h3>Content Areas</h3>
+                    <p class="muted">Add, edit, and archive content areas.</p>
+                  </div>
+                </div>
+                <form id="contentAreaForm" class="inline-form">
+                  <input type="hidden" id="contentAreaIdInput" />
+                  <label class="field">
+                    <span>Name</span>
+                    <input id="contentAreaNameInput" required />
+                  </label>
+                  <label class="field small-field">
+                    <span>Sort Order</span>
+                    <input id="contentAreaSortInput" type="number" min="1" required />
+                  </label>
+                  <label class="toggle-field">
+                    <input id="contentAreaActiveInput" type="checkbox" checked />
+                    <span>Active</span>
+                  </label>
+                  <button class="button button-primary" type="submit">
+                    Save Content Area
+                  </button>
+                  <button
+                    class="button button-ghost"
+                    type="button"
+                    id="resetContentAreaButton"
+                  >
+                    Clear
+                  </button>
+                </form>
+                <div id="contentAreaList" class="stack-sm"></div>
+              </section>
+
+              <section class="card stack-md">
+                <div class="section-title-row">
+                  <div>
+                    <h3>Apps</h3>
+                    <p class="muted">Add, edit, archive, and group apps.</p>
+                  </div>
+                </div>
+                <form id="appForm" class="inline-form">
+                  <input type="hidden" id="appIdInput" />
+                  <label class="field">
+                    <span>Name</span>
+                    <input id="appNameInput" required />
+                  </label>
+                  <label class="field">
+                    <span>Content Area</span>
+                    <select id="appContentAreaInput" required></select>
+                  </label>
+                  <label class="toggle-field">
+                    <input id="appActiveInput" type="checkbox" checked />
+                    <span>Active</span>
+                  </label>
+                  <button class="button button-primary" type="submit">Save App</button>
+                  <button class="button button-ghost" type="button" id="resetAppButton">
+                    Clear
+                  </button>
+                </form>
+                <div id="appList" class="stack-sm"></div>
+              </section>
+            </div>
+
+            <section class="card stack-md admin-managed-section">
+              <div class="section-title-row">
+                <div>
+                  <h3>Student App Assignments</h3>
+                  <p class="muted">
+                    Assign or unassign apps for each student by content area.
+                  </p>
+                </div>
+              </div>
+              <label class="field">
+                <span>Select Student</span>
+                <select id="assignmentStudentSelect"></select>
+              </label>
+              <div id="assignmentGroups" class="assignment-groups"></div>
+            </section>
+
+            <section class="card stack-md hidden" id="settingsAccessNotice">
+              <div class="empty-state">
+                Only admin users can open Settings.
+              </div>
+            </section>
+          </section>
+
+          <section id="exportScreen" class="screen hidden">
+            <div class="screen-header">
+              <div>
+                <h2>Export</h2>
+                <p class="muted">
+                  Export student intervention logs as CSV or Excel.
+                </p>
+              </div>
+            </div>
+
+            <section class="card stack-md">
+              <form id="exportForm" class="export-form">
+                <label class="field">
+                  <span>Export Scope</span>
+                  <select id="exportScopeSelect">
+                    <option value="all">All Students</option>
+                    <option value="one">One Student</option>
+                  </select>
+                </label>
+
+                <label class="field hidden" id="exportStudentField">
+                  <span>Student</span>
+                  <select id="exportStudentSelect"></select>
+                </label>
+
+                <label class="field">
+                  <span>Date Range Type</span>
+                  <select id="exportRangeTypeSelect">
+                    <option value="week">Selected Week</option>
+                    <option value="custom">Custom Date Range</option>
+                  </select>
+                </label>
+
+                <div class="date-range-grid">
+                  <label class="field">
+                    <span>Week Start</span>
+                    <input id="exportWeekStartInput" type="date" />
+                  </label>
+                  <label class="field hidden" id="customStartField">
+                    <span>Start Date</span>
+                    <input id="exportStartDateInput" type="date" />
+                  </label>
+                  <label class="field hidden" id="customEndField">
+                    <span>End Date</span>
+                    <input id="exportEndDateInput" type="date" />
+                  </label>
+                </div>
+
+                <label class="field">
+                  <span>Format</span>
+                  <select id="exportFormatSelect">
+                    <option value="csv">CSV</option>
+                    <option value="excel">Excel</option>
+                  </select>
+                </label>
+
+                <button class="button button-primary button-lg" type="submit">
+                  Download Export
+                </button>
+              </form>
+              <p id="exportStatus" class="status-line"></p>
+            </section>
+          </section>
+
+          <section id="analyticsScreen" class="screen hidden">
+            <div class="screen-header">
+              <div>
+                <h2>Heat Map Analytics</h2>
+                <p class="muted">
+                  Review manual XP by day, app, and content area to spot dependency patterns early.
+                </p>
+              </div>
+            </div>
+
+            <section class="card stack-md">
+              <form class="analytics-filter-grid" id="analyticsFilterForm">
+                <label class="field">
+                  <span>Student</span>
+                  <select id="analyticsStudentSelect"></select>
+                </label>
+                <label class="field">
+                  <span>Start Date</span>
+                  <input id="analyticsStartDateInput" type="date" />
+                </label>
+                <label class="field">
+                  <span>End Date</span>
+                  <input id="analyticsEndDateInput" type="date" />
+                </label>
+                <label class="field">
+                  <span>Content Area / App</span>
+                  <select id="analyticsAreaAppFilter"></select>
+                </label>
+                <label class="field">
+                  <span>SOAR Level</span>
+                  <select id="analyticsLevelFilter"></select>
+                </label>
+                <label class="field">
+                  <span>Daily Average Band</span>
+                  <select id="analyticsGoalBandFilter"></select>
+                </label>
+              </form>
+            </section>
+
+            <section class="analytics-layout">
+              <section class="card stack-md">
+                <div class="section-title-row">
+                  <div>
+                    <h3>Heat Map</h3>
+                    <p class="muted">
+                      Hover-friendly cells show exact manual XP totals and percent of each day's cap.
+                    </p>
+                  </div>
+                </div>
+                <div id="analyticsHeatMap" class="analytics-heatmap"></div>
+              </section>
+
+              <section class="card stack-md">
+                <div class="section-title-row">
+                  <div>
+                    <h3>Audit Summary</h3>
+                    <p class="muted">
+                      Flags highlight over-reliance on one app or one intervention type.
+                    </p>
+                  </div>
+                </div>
+                <div id="analyticsSummary" class="stack-sm"></div>
+              </section>
+            </section>
+          </section>
+        </main>
+      </div>
+    </div>
+
+    <dialog class="modal" id="studentModal">
+      <form class="modal-card" id="studentForm" method="dialog">
+        <div class="modal-header">
+          <div>
+            <p class="eyebrow">Student</p>
+            <h3>Add Student</h3>
+          </div>
+          <button class="icon-button" type="button" data-close-modal="studentModal">
+            x
+          </button>
+        </div>
+        <input type="hidden" id="studentIdInput" />
+        <label class="field">
+          <span>Name</span>
+          <input id="studentNameInput" required />
+        </label>
+        <div class="modal-grid">
+          <label class="field">
+            <span>Band</span>
+            <select id="studentBandInput" required>
+              <option value="K-2">K-2</option>
+              <option value="3-6">3-6</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Grade Band</span>
+            <select id="studentGradeBandInput" required>
+              <option value="Kindergarten">Kindergarten</option>
+              <option value="Grade 1">Grade 1</option>
+              <option value="Grades 2-3">Grades 2-3</option>
+              <option value="Grades 4-5">Grades 4-5</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>WIDA Level</span>
+            <select id="studentWidaInput" required>
+              <option value="1">1</option>
+              <option value="2">2</option>
+              <option value="3">3</option>
+              <option value="4">4</option>
+              <option value="5">5</option>
+              <option value="6">6</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>SOAR / WIDA Allotment Level</span>
+            <select id="studentAllotmentLevelInput" required>
+              <option value="1">1</option>
+              <option value="2">2</option>
+              <option value="3">3</option>
+              <option value="4">4</option>
+              <option value="5">5</option>
+              <option value="6">6</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Daily Average XP Goal</span>
+            <select id="studentDailyAverageGoalInput" required>
+              <option value="50">50</option>
+              <option value="60">60</option>
+              <option value="70">70</option>
+              <option value="80">80</option>
+              <option value="90">90</option>
+              <option value="100">100</option>
+              <option value="110">110</option>
+              <option value="120">120</option>
+              <option value="130">130</option>
+              <option value="140">140</option>
+              <option value="150">150</option>
+            </select>
+          </label>
+          <label class="toggle-field">
+            <input id="studentActiveInput" type="checkbox" checked />
+            <span>Active</span>
+          </label>
+        </div>
+        <div class="modal-actions">
+          <button class="button button-primary" type="submit">Save Student</button>
+          <button class="button button-secondary" type="button" data-close-modal="studentModal">
+            Cancel
+          </button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog class="modal" id="groupModal">
+      <form class="modal-card large-modal" id="groupForm" method="dialog">
+        <div class="modal-header">
+          <div>
+            <p class="eyebrow">Group</p>
+            <h3>Save Group</h3>
+          </div>
+          <button class="icon-button" type="button" data-close-modal="groupModal">
+            x
+          </button>
+        </div>
+        <input type="hidden" id="groupIdInput" />
+        <label class="field">
+          <span>Group Name</span>
+          <input id="groupNameInput" required />
+        </label>
+        <label class="field small-field">
+          <span>Student Search</span>
+          <input
+            id="groupStudentSearchInput"
+            type="search"
+            autocomplete="off"
+            placeholder="Search students to add"
+          />
+        </label>
+        <div class="student-suggestion-list" id="groupStudentSuggestions"></div>
+        <div class="selected-student-list" id="groupSelectedStudents"></div>
+        <div class="modal-grid">
+          <label class="field">
+            <span>Student Count</span>
+            <input id="groupStudentCountInput" readonly />
+          </label>
+          <label class="field">
+            <span>Notes</span>
+            <input id="groupNotesInput" placeholder="Optional details for this group" />
+          </label>
+        </div>
+        <div class="modal-actions">
+          <button class="button button-primary" type="submit">Save Group</button>
+          <button class="button button-secondary" type="button" data-close-modal="groupModal">
+            Cancel
+          </button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog class="modal" id="interventionModal">
+      <form class="modal-card large-modal" id="interventionForm" method="dialog">
+        <div class="modal-header">
+          <div>
+            <p class="eyebrow">Intervention</p>
+            <h3>Add Intervention</h3>
+          </div>
+          <button
+            class="icon-button"
+            type="button"
+            data-close-modal="interventionModal"
+          >
+            x
+          </button>
+        </div>
+
+        <input type="hidden" id="interventionIdInput" />
+        <div class="modal-grid">
+          <label class="field">
+            <span>Student</span>
+            <select id="interventionStudentInput" required></select>
+          </label>
+          <label class="field">
+            <span>Date</span>
+            <input id="interventionDateInput" type="date" required />
+          </label>
+          <label class="field">
+            <span>Teacher Name</span>
+            <input id="interventionTeacherInput" required />
+          </label>
+          <label class="field">
+            <span>Content Area</span>
+            <select id="interventionContentAreaInput" required></select>
+          </label>
+          <label class="field">
+            <span>App</span>
+            <select id="interventionAppInput" required></select>
+          </label>
+          <label class="field">
+            <span>Intervention Category</span>
+            <input id="interventionCategoryInput" required />
+          </label>
+          <label class="field">
+            <span>Task Detail</span>
+            <input id="interventionTaskDetailInput" required />
+          </label>
+          <label class="field">
+            <span>XP Awarded</span>
+            <input id="interventionXpInput" type="number" min="0" step="1" required />
+          </label>
+        </div>
+
+        <label class="field">
+          <span>Notes</span>
+          <textarea id="interventionNotesInput" rows="3"></textarea>
+        </label>
+        <label class="field">
+          <span>Evidence of Production</span>
+          <textarea id="interventionEvidenceInput" rows="3" required></textarea>
+        </label>
+        <section class="card stack-sm intervention-cap-card">
+          <div class="section-title-row">
+            <div>
+              <h3>Manual XP Guardrail</h3>
+              <p class="muted">Live cap check based on this student's daily allotment.</p>
+            </div>
+          </div>
+          <div id="interventionCapSummary" class="cap-summary-card"></div>
+          <p id="interventionCapWarning" class="status-line"></p>
+        </section>
+        <label class="field hidden" id="interventionOverrideNoteField">
+          <span>Override Note</span>
+          <textarea
+            id="interventionOverrideNoteInput"
+            rows="3"
+            placeholder="Required if manual XP exceeds the student's allowable daily cap."
+          ></textarea>
+        </label>
+
+        <div class="modal-grid">
+          <label class="field">
+            <span>Repeated in New Context</span>
+            <select id="interventionRepeatedInput" required>
+              <option value="false">No</option>
+              <option value="true">Yes</option>
+            </select>
+          </label>
+          <label class="field hidden" id="newContextNoteField">
+            <span>New Context Note</span>
+            <input id="interventionNewContextInput" />
+          </label>
+        </div>
+
+        <div class="modal-actions">
+          <button class="button button-primary" type="submit">Save Intervention</button>
+          <button
+            class="button button-secondary"
+            type="button"
+            data-close-modal="interventionModal"
+          >
+            Cancel
+          </button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog class="modal" id="quickLinkModal">
+      <form class="modal-card large-modal" id="quickLinkForm" method="dialog">
+        <div class="modal-header">
+          <div>
+            <p class="eyebrow">Quick Link</p>
+            <h3>Save Quick Link</h3>
+          </div>
+          <button class="icon-button" type="button" data-close-modal="quickLinkModal">
+            x
+          </button>
+        </div>
+
+        <input type="hidden" id="quickLinkIdInput" />
+        <div class="modal-grid">
+          <label class="field">
+            <span>Tile Name</span>
+            <input id="quickLinkTitleInput" required />
+          </label>
+          <label class="field">
+            <span>Target Type</span>
+            <select id="quickLinkTargetTypeInput" required>
+              <option value="student">Select Student</option>
+              <option value="group">Make or Use Group</option>
+            </select>
+          </label>
+          <label class="field" id="quickLinkStudentField">
+            <span>Student</span>
+            <select id="quickLinkStudentInput"></select>
+          </label>
+          <div class="field hidden" id="quickLinkGroupField">
+            <span>Group</span>
+            <div class="inline-action-row">
+              <select id="quickLinkGroupInput"></select>
+              <button class="button button-secondary" id="createQuickLinkGroupButton" type="button">
+                Create Group
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div class="section-title-row">
+          <div>
+            <h4>Quick Actions</h4>
+            <p class="muted">Add one to three prefilled intervention actions.</p>
+          </div>
+        </div>
+        <div id="quickLinkActionsContainer" class="stack-md"></div>
+
+        <div class="modal-actions">
+          <button class="button button-primary" type="submit">Save Quick Link</button>
+          <button class="button button-secondary" type="button" data-close-modal="quickLinkModal">
+            Cancel
+          </button>
+        </div>
+      </form>
+    </dialog>

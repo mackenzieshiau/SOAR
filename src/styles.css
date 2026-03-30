@@ -1,0 +1,187 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    color-scheme: light;
+  }
+
+  body {
+    @apply min-h-screen bg-[#eef2fb] text-slate-900 antialiased;
+    background-image:
+      radial-gradient(circle at top left, rgba(189, 169, 255, 0.28), transparent 34%),
+      radial-gradient(circle at top right, rgba(33, 60, 114, 0.16), transparent 26%),
+      linear-gradient(180deg, #f8faff 0%, #edf3ff 52%, #eef2fb 100%);
+  }
+
+  #root {
+    @apply min-h-screen;
+  }
+}
+
+@layer components {
+  .app-shell {
+    @apply mx-auto min-h-screen max-w-[1520px] px-4 py-6 md:px-8 md:py-8;
+  }
+
+  .card,
+  .student-tile,
+  .assignment-card,
+  .list-item-card,
+  .intervention-card,
+  .day-accordion,
+  .empty-state,
+  .quick-entry-row,
+  .quick-link-tile,
+  .modal-card,
+  .quick-add-panel,
+  .section-block,
+  .metric-card {
+    @apply rounded-[28px] border border-slate-200/80 bg-white/88 shadow-[0_18px_50px_rgba(15,23,42,0.08)] backdrop-blur;
+  }
+
+  .topbar,
+  .screen {
+    @apply rounded-[30px] border border-slate-200/80 bg-white/72 shadow-[0_20px_60px_rgba(15,23,42,0.08)] backdrop-blur;
+  }
+
+  .topbar {
+    @apply px-6 py-5 md:px-8;
+  }
+
+  .screen {
+    @apply px-5 py-5 md:px-8 md:py-8;
+  }
+
+  .brand-lockup h1,
+  .login-heading h1,
+  .screen-header h2 {
+    @apply text-slate-950;
+    font-family: "Poppins", "Avenir Next", "Segoe UI", sans-serif;
+    font-weight: 700;
+    letter-spacing: -0.03em;
+  }
+
+  .eyebrow {
+    @apply text-[0.7rem] font-semibold tracking-[0.26em] text-[#4d628a];
+  }
+
+  .muted,
+  .brand-note,
+  .status-line,
+  .empty-inline {
+    @apply text-slate-500;
+  }
+
+  .login-card,
+  .quick-link-card,
+  .quick-add-card {
+    @apply rounded-[32px] border border-slate-200/80 bg-white/90 shadow-[0_24px_72px_rgba(15,23,42,0.1)];
+  }
+
+  .login-card {
+    @apply max-w-[1160px] p-6 md:p-10;
+  }
+
+  .login-screen {
+    @apply grid min-h-[calc(100vh-4rem)] place-items-center;
+  }
+
+  .login-panels {
+    @apply gap-5 lg:grid-cols-2;
+  }
+
+  .login-panel {
+    @apply rounded-[28px] border border-slate-200/80 bg-slate-50/80 p-6 shadow-sm;
+  }
+
+  .field input,
+  .field select,
+  .field textarea {
+    @apply rounded-2xl border border-slate-200 bg-white/95 px-4 py-3 text-sm text-slate-900 shadow-sm transition outline-none;
+  }
+
+  .field input:focus,
+  .field select:focus,
+  .field textarea:focus {
+    @apply border-[#9a8cff] ring-4 ring-[#c8c0ff]/35;
+  }
+
+  .button {
+    @apply inline-flex min-h-11 items-center justify-center rounded-2xl border border-transparent px-4 py-2.5 text-sm font-semibold shadow-sm transition;
+  }
+
+  .button-primary {
+    @apply bg-[#1f3463] text-white hover:bg-[#182a53];
+  }
+
+  .button-secondary {
+    @apply border border-[#c9cff4] bg-[#eef1ff] text-[#243a71] hover:bg-[#e2e8ff];
+  }
+
+  .button-ghost {
+    @apply border border-slate-200 bg-white/80 text-slate-700 hover:bg-slate-50;
+  }
+
+  .quick-add-layout,
+  .overview-grid {
+    @apply gap-6 xl:grid-cols-[minmax(0,1.18fr)_minmax(360px,0.92fr)];
+  }
+
+  .profile-stats {
+    @apply items-start gap-4 md:grid-cols-[minmax(0,1fr)_auto];
+  }
+
+  .metric-card-featured,
+  .cap-summary-card {
+    @apply border-[#c9cff4] bg-gradient-to-br from-[#f0f3ff] via-white to-[#f7f0ff];
+  }
+
+  .inline-badge,
+  .meta-pill {
+    @apply border border-[#d4d8f9] bg-[#eef1ff] text-[#29437e];
+  }
+
+  .app-pill-row {
+    @apply flex flex-wrap gap-3;
+  }
+
+  .app-pill {
+    @apply rounded-full border border-[#ddd9ff] bg-[#f6f2ff] px-4 py-2 text-sm font-medium text-[#49307c];
+  }
+
+  .assigned-app-group {
+    @apply rounded-[24px] border border-slate-200/80 bg-slate-50/80 p-5 shadow-sm;
+  }
+
+  .assigned-app-group-title {
+    @apply text-base font-semibold text-slate-900;
+  }
+
+  .day-accordion[open] {
+    @apply border-[#cfd6fb] bg-white;
+  }
+
+  .record-toolbar,
+  .quick-entry-row-header,
+  .student-heading,
+  .screen-header,
+  .section-title-row {
+    @apply items-center;
+  }
+
+  .student-grid {
+    @apply gap-5;
+  }
+}
+
+@media (max-width: 960px) {
+  .app-shell {
+    @apply px-3 py-4;
+  }
+
+  .overview-grid,
+  .quick-add-layout,
+  .login-panels {
+    @apply grid-cols-1;
+  }
+}

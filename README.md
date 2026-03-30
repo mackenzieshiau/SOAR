@@ -18,15 +18,18 @@ This version uses SQLite in the browser through a local `sql.js` engine. The dat
 
 ## Run locally
 
-1. Start the local server with [`serve-local.ps1`](./serve-local.ps1), or let me open it for you.
-2. Open [http://localhost:8123](http://localhost:8123).
-3. Use access code `SOAR`.
+1. Install dependencies with `npm install`.
+2. For live development, run `npm run dev` and open [http://127.0.0.1:8123](http://127.0.0.1:8123).
+3. For a production-like local build, run `npm run build` and then start [`serve-local.ps1`](./serve-local.ps1).
+4. Use access code `SOAR`.
 
 ## Files
 
-- `index.html`: app shell and screen layout
-- `styles.css`: responsive visual design
-- `app.js`: UI state, totals, grouping, exports, and CRUD wiring
+- `index.html`: Vite app entry
+- `src/main.jsx`: React/Tailwind bootstrapping for the local app shell
+- `src/styles.css` and `src/index.css`: navy/lilac shell styling
+- `styles.css`: legacy UI styling still used by the current DOM-driven app logic
+- `app.js`: current UI state, totals, grouping, exports, and CRUD wiring
 - `data-service.js`: local SQLite database setup and persistence
 - `seed-data.js`: first-run sample data
 - `vendor/sql-wasm.js` and `vendor/sql-wasm.wasm`: local SQLite engine files

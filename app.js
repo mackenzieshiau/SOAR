@@ -1,4 +1,11 @@
 import { createDataService } from "./data-service.js";
+import {
+  QUICK_LINK_ACTION_LIMIT,
+  createQuickLinkAction,
+  createQuickLinkDraft,
+  normalizeStoredGroups,
+  normalizeStoredQuickLinks,
+} from "./app-logic.js";
 
 const SESSION_KEY = "soar-tracker-session";
 const DEFAULT_ACCESS_CODE = "SOAR";
@@ -120,7 +127,6 @@ const QUICK_ADD_INTERVENTION_CAP_KEYS = {
 };
 const STUDENT_GROUPS_SETTING_KEY = "studentGroups";
 const QUICK_LINKS_SETTING_KEY = "quickLinks";
-const QUICK_LINK_ACTION_LIMIT = 3;
 const APP_INTERVENTION_CAPS = {
   math: {
     mathVocabulary: 4,
@@ -185,30 +191,6 @@ function createGroupDraft() {
   };
 }
 
-function createQuickLinkAction(overrides = {}) {
-  return {
-    id: overrides.id || `action-${Math.random().toString(36).slice(2, 10)}`,
-    label: overrides.label || "",
-    contentAreaId: overrides.contentAreaId || "",
-    appId: overrides.appId || "",
-    interventionCategory: overrides.interventionCategory || "",
-    notes: overrides.notes || "",
-    xp: overrides.xp || "2",
-  };
-}
-
-function createQuickLinkDraft() {
-  return {
-    id: "",
-    title: "",
-    targetType: "student",
-    targetId: "",
-    actions: Array.from({ length: QUICK_LINK_ACTION_LIMIT }, (_, index) =>
-      createQuickLinkAction({ label: index === 0 ? "Action 1" : "" }),
-    ),
-  };
-}
-
 function createSession(role = "teacher", displayName = "Shared Access", options = {}) {
   return {
     role,
@@ -252,6 +234,7 @@ const state = {
   quickAdd: createQuickAddState(),
   groupDraft: createGroupDraft(),
   quickLinkDraft: createQuickLinkDraft(),
+  resumeQuickLinkModalAfterGroupSave: false,
   session: null,
 };
 
@@ -353,6 +336,7 @@ const dom = {
   quickLinkStudentInput: document.querySelector("#quickLinkStudentInput"),
   quickLinkGroupField: document.querySelector("#quickLinkGroupField"),
   quickLinkGroupInput: document.querySelector("#quickLinkGroupInput"),
+  createQuickLinkGroupButton: document.querySelector("#createQuickLinkGroupButton"),
   quickLinkActionsContainer: document.querySelector("#quickLinkActionsContainer"),
   interventionStudentInput: document.querySelector("#interventionStudentInput"),
   interventionDateInput: document.querySelector("#interventionDateInput"),
@@ -424,7 +408,11 @@ const dom = {
   analyticsSummary: document.querySelector("#analyticsSummary"),
 };
 
-document.addEventListener("DOMContentLoaded", init);
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", init);
+} else {
+  init();
+}
 
 async function init() {
   bindEvents();
@@ -552,6 +540,7 @@ function bindEvents() {
   dom.quickLinkTargetTypeInput.addEventListener("change", syncQuickLinkTargetFields);
   dom.quickLinkStudentInput.addEventListener("change", syncQuickLinkTargetFields);
   dom.quickLinkGroupInput.addEventListener("change", syncQuickLinkTargetFields);
+  dom.createQuickLinkGroupButton.addEventListener("click", handleQuickLinkCreateGroupClick);
   dom.quickLinkActionsContainer.addEventListener("input", handleQuickLinkActionsInput);
   dom.quickLinkActionsContainer.addEventListener("change", handleQuickLinkActionsInput);
   dom.quickLinkGrid.addEventListener("click", handleQuickLinkGridClick);
@@ -587,6 +576,9 @@ function bindEvents() {
   document.querySelectorAll("[data-close-modal]").forEach((button) => {
     button.addEventListener("click", () => {
       const modalId = button.getAttribute("data-close-modal");
+      if (modalId === "groupModal") {
+        state.resumeQuickLinkModalAfterGroupSave = false;
+      }
       document.querySelector(`#${modalId}`)?.close();
     });
   });
@@ -707,31 +699,13 @@ function parseStoredCollection(key, fallback = []) {
 async function refreshData() {
   try {
     state.data = await state.service.loadAll();
-    state.data.groups = parseStoredCollection(STUDENT_GROUPS_SETTING_KEY, [])
-      .map((group) => ({
-        id: String(group.id || ""),
-        name: String(group.name || ""),
-        studentIds: Array.isArray(group.studentIds) ? group.studentIds.map(String) : [],
-        notes: String(group.notes || ""),
-        createdAt: group.createdAt || "",
-        updatedAt: group.updatedAt || "",
-      }))
-      .filter((group) => group.id && group.name);
-    state.data.quickLinks = parseStoredCollection(QUICK_LINKS_SETTING_KEY, [])
-      .map((quickLink) => ({
-        id: String(quickLink.id || ""),
-        title: String(quickLink.title || ""),
-        targetType: quickLink.targetType === "group" ? "group" : "student",
-        targetId: String(quickLink.targetId || ""),
-        actions: Array.isArray(quickLink.actions)
-          ? quickLink.actions
-              .slice(0, QUICK_LINK_ACTION_LIMIT)
-              .map((action) => createQuickLinkAction(action))
-          : [],
-        createdAt: quickLink.createdAt || "",
-        updatedAt: quickLink.updatedAt || "",
-      }))
-      .filter((quickLink) => quickLink.id && quickLink.title);
+    state.data.groups = normalizeStoredGroups(
+      parseStoredCollection(STUDENT_GROUPS_SETTING_KEY, []),
+    );
+    state.data.quickLinks = normalizeStoredQuickLinks(
+      parseStoredCollection(QUICK_LINKS_SETTING_KEY, []),
+      QUICK_LINK_ACTION_LIMIT,
+    );
     syncSessionAfterDataLoad();
     const activeStudents = getActiveStudents();
 
@@ -1267,11 +1241,12 @@ function legacyRenderStudentProfile1() {
         .filter((app) => app && app.contentAreaId === contentArea.id && app.active),
     }))
     .filter((group) => group.apps.length > 0);
+  const studentRecords = getStudentInterventions(student.id);
 
   const currentWeekStart = getStartOfWeek(new Date());
   const currentWeekEnd = addDays(currentWeekStart, 6);
   const currentWeekTotal = sumXp(
-    getStudentInterventions(student.id).filter((item) =>
+    studentRecords.filter((item) =>
       isDateWithinRange(item.date, toIsoDate(currentWeekStart), toIsoDate(currentWeekEnd)),
     ),
   );
@@ -1310,8 +1285,8 @@ function legacyRenderStudentProfile1() {
               ? groupedApps
                   .map(
                     (group) => `
-                  <div class="stack-sm">
-                    <strong>${escapeHtml(group.contentArea.name)}</strong>
+                  <div class="assigned-app-group stack-sm">
+                    <strong class="assigned-app-group-title">${escapeHtml(group.contentArea.name)}</strong>
                     <div class="app-pill-row">
                       ${group.apps
                         .map((app) => `<span class="app-pill">${escapeHtml(app.name)}</span>`)
@@ -1337,7 +1312,20 @@ function legacyRenderStudentProfile1() {
     addDays(state.selectedWeekStart, 6),
   );
 
-  const weekDays = Array.from({ length: 7 }, (_, index) => addDays(state.selectedWeekStart, index));
+  const weekDays = (() => {
+    const weekEntries = Array.from({ length: 7 }, (_, index) => {
+      const date = addDays(state.selectedWeekStart, index);
+      return { date, isoDate: toIsoDate(date) };
+    });
+    const recordDates = new Set(studentRecords.map((record) => record.date));
+    const filledDays = weekEntries
+      .filter(({ isoDate }) => recordDates.has(isoDate))
+      .sort((left, right) => right.isoDate.localeCompare(left.isoDate));
+    const emptyDays = weekEntries
+      .filter(({ isoDate }) => !recordDates.has(isoDate))
+      .sort((left, right) => right.isoDate.localeCompare(left.isoDate));
+    return [...filledDays, ...emptyDays].map(({ date }) => date);
+  })();
   dom.dailyAccordion.innerHTML = weekDays
     .map((date) => {
       const isoDate = toIsoDate(date);
@@ -3324,6 +3312,13 @@ async function handleGroupSubmit(event) {
   await saveGroups([...otherGroups, nextGroup]);
   dom.groupModal.close();
   await refreshData();
+  if (state.resumeQuickLinkModalAfterGroupSave) {
+    state.resumeQuickLinkModalAfterGroupSave = false;
+    state.quickLinkDraft.targetType = "group";
+    state.quickLinkDraft.targetId = nextGroup.id;
+    renderQuickLinkDraft();
+    dom.quickLinkModal.showModal();
+  }
 }
 
 function openQuickLinkModal(quickLinkId = "") {
@@ -3335,14 +3330,18 @@ function openQuickLinkModal(quickLinkId = "") {
         targetType: quickLink.targetType,
         targetId: quickLink.targetId,
         actions: Array.from({ length: QUICK_LINK_ACTION_LIMIT }, (_, index) =>
-          createQuickLinkAction(
-            quickLink.actions[index] || { label: index === 0 ? `Action ${index + 1}` : "" },
-          ),
+          createQuickLinkAction(quickLink.actions[index] || {}),
         ),
       }
     : createQuickLinkDraft();
   renderQuickLinkDraft();
   dom.quickLinkModal.showModal();
+}
+
+function handleQuickLinkCreateGroupClick() {
+  state.resumeQuickLinkModalAfterGroupSave = true;
+  dom.quickLinkModal.close();
+  openGroupModal();
 }
 
 function renderQuickLinkDraft() {
@@ -3357,6 +3356,10 @@ function renderQuickLinkDraft() {
   dom.quickLinkGroupInput.innerHTML = groups
     .map((group) => `<option value="${escapeHtml(group.id)}">${escapeHtml(group.name)}</option>`)
     .join("");
+  dom.createQuickLinkGroupButton.classList.toggle(
+    "hidden",
+    state.quickLinkDraft.targetType !== "group",
+  );
   if (state.quickLinkDraft.targetType === "student" && activeStudents.length) {
     dom.quickLinkStudentInput.value = state.quickLinkDraft.targetId || activeStudents[0].id;
   }
@@ -3383,7 +3386,7 @@ function renderQuickLinkActionFields(action, index) {
       <div class="modal-grid">
         <label class="field">
           <span>Button Label</span>
-          <input data-action-index="${index}" data-action-field="label" value="${escapeHtml(action.label)}" placeholder="Circle Time" />
+          <input data-action-index="${index}" data-action-field="label" value="${escapeHtml(action.label)}" placeholder="Action ${index + 1}" />
         </label>
         <label class="field">
           <span>Content Area</span>
@@ -3427,6 +3430,7 @@ function syncQuickLinkTargetFields() {
   state.quickLinkDraft.targetType = targetType;
   dom.quickLinkStudentField.classList.toggle("hidden", targetType !== "student");
   dom.quickLinkGroupField.classList.toggle("hidden", targetType !== "group");
+  dom.createQuickLinkGroupButton.classList.toggle("hidden", targetType !== "group");
   state.quickLinkDraft.targetId =
     targetType === "group" ? dom.quickLinkGroupInput.value : dom.quickLinkStudentInput.value;
 }
@@ -3448,6 +3452,23 @@ function handleQuickLinkActionsInput(event) {
   }
 }
 
+function readQuickLinkActionFromForm(index) {
+  const getFieldValue = (field) =>
+    dom.quickLinkActionsContainer.querySelector(
+      `[data-action-index="${index}"][data-action-field="${field}"]`,
+    )?.value ?? "";
+  const currentAction = state.quickLinkDraft.actions[index] || createQuickLinkAction();
+  return createQuickLinkAction({
+    ...currentAction,
+    label: getFieldValue("label"),
+    contentAreaId: getFieldValue("contentAreaId"),
+    appId: getFieldValue("appId"),
+    interventionCategory: getFieldValue("interventionCategory"),
+    notes: getFieldValue("notes"),
+    xp: getFieldValue("xp"),
+  });
+}
+
 async function handleQuickLinkSubmit(event) {
   event.preventDefault();
   state.quickLinkDraft.title = dom.quickLinkTitleInput.value.trim();
@@ -3456,6 +3477,10 @@ async function handleQuickLinkSubmit(event) {
     state.quickLinkDraft.targetType === "group"
       ? dom.quickLinkGroupInput.value
       : dom.quickLinkStudentInput.value;
+  state.quickLinkDraft.actions = Array.from(
+    { length: QUICK_LINK_ACTION_LIMIT },
+    (_, index) => readQuickLinkActionFromForm(index),
+  );
   const actions = state.quickLinkDraft.actions
     .map((action) => ({
       ...action,
@@ -5207,11 +5232,12 @@ function renderStudentProfile() {
         .filter((app) => app && app.contentAreaId === contentArea.id && app.active),
     }))
     .filter((group) => group.apps.length > 0);
+  const studentRecords = getStudentInterventions(student.id);
 
   const currentWeekStart = getStartOfWeek(new Date());
   const currentWeekEnd = addDays(currentWeekStart, 6);
   const currentWeekTotal = sumXp(
-    getStudentInterventions(student.id).filter((item) =>
+    studentRecords.filter((item) =>
       isDateWithinRange(item.date, toIsoDate(currentWeekStart), toIsoDate(currentWeekEnd)),
     ),
   );
@@ -5278,8 +5304,8 @@ function renderStudentProfile() {
               ? groupedApps
                   .map(
                     (group) => `
-                  <div class="stack-sm">
-                    <strong>${escapeHtml(group.contentArea.name)}</strong>
+                  <div class="assigned-app-group stack-sm">
+                    <strong class="assigned-app-group-title">${escapeHtml(group.contentArea.name)}</strong>
                     <div class="app-pill-row">
                       ${group.apps
                         .map((app) => `<span class="app-pill">${escapeHtml(app.name)}</span>`)
@@ -5302,7 +5328,20 @@ function renderStudentProfile() {
     addDays(state.selectedWeekStart, 6),
   );
 
-  const weekDays = Array.from({ length: 7 }, (_, index) => addDays(state.selectedWeekStart, index));
+  const weekDays = (() => {
+    const weekEntries = Array.from({ length: 7 }, (_, index) => {
+      const date = addDays(state.selectedWeekStart, index);
+      return { date, isoDate: toIsoDate(date) };
+    });
+    const recordDates = new Set(studentRecords.map((record) => record.date));
+    const filledDays = weekEntries
+      .filter(({ isoDate }) => recordDates.has(isoDate))
+      .sort((left, right) => right.isoDate.localeCompare(left.isoDate));
+    const emptyDays = weekEntries
+      .filter(({ isoDate }) => !recordDates.has(isoDate))
+      .sort((left, right) => right.isoDate.localeCompare(left.isoDate));
+    return [...filledDays, ...emptyDays].map(({ date }) => date);
+  })();
   dom.dailyAccordion.innerHTML = weekDays
     .map((date) => {
       const isoDate = toIsoDate(date);
