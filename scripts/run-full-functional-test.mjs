@@ -6,6 +6,8 @@ import process from "node:process";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
 
+import { handleNodeGoogleSheetSync } from "../server/google-sheet-sync.js";
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -104,6 +106,10 @@ async function ensureLocalServer(urlString) {
   const server = http.createServer(async (request, response) => {
     try {
       const requestUrl = new URL(request.url || "/", urlString);
+      if (requestUrl.pathname === "/api/google-sheet-sync") {
+        await handleNodeGoogleSheetSync(request, response, process.env);
+        return;
+      }
       const relativePath = decodeURIComponent(requestUrl.pathname === "/" ? "/index.html" : requestUrl.pathname);
       const normalized = path.normalize(relativePath).replace(/^([/\\])+/, "");
       const filePath = path.join(appRoot, normalized);
@@ -283,6 +289,7 @@ try {
   await stage("Homepage quick add with multiple students", async () => {
     qa.quickAddNoteA = `QA quick add note A ${Date.now()}`;
     qa.quickAddNoteB = `QA quick add note B ${Date.now()}`;
+    qa.quickAddEvidence = "";
 
     await page.getByRole("button", { name: "Homepage" }).click();
     await page.getByRole("heading", { name: "Homepage" }).waitFor({ state: "visible", timeout: 15000 });
@@ -311,6 +318,23 @@ try {
     });
 
     await page.locator("#quickAddInterventionInput").selectOption({ label: "TPR" });
+    await page.waitForFunction(() => {
+      return [...document.querySelectorAll(".quick-entry-evidence-option span")].some((node) =>
+        (node.textContent || "").includes("Student produces the target sound correctly"),
+      );
+    });
+    qa.quickAddEvidence = await page
+      .locator(".quick-entry-row")
+      .nth(0)
+      .locator('[data-field="evidenceOption"]')
+      .first()
+      .getAttribute("data-evidence-value");
+    await page
+      .locator(".quick-entry-row")
+      .nth(0)
+      .locator(".quick-entry-evidence-option")
+      .first()
+      .click();
     await page.locator('#quickAddStudentRows [data-field="notes"]').nth(0).fill(qa.quickAddNoteA);
     await page.locator('#quickAddStudentRows [data-field="xp"]').nth(0).fill("");
     await page.locator('#quickAddStudentRows [data-field="notes"]').nth(1).fill(qa.quickAddNoteB);
@@ -329,11 +353,15 @@ try {
       timeout: 15000,
     });
     await page.waitForFunction(
-      ({ expectedNote }) => {
+      ({ expectedNote, expectedEvidence }) => {
         const firstAccordion = document.querySelector(".day-accordion");
-        return Boolean(firstAccordion && firstAccordion.textContent?.includes(expectedNote));
+        return Boolean(
+          firstAccordion
+            && firstAccordion.textContent?.includes(expectedNote)
+            && firstAccordion.textContent?.includes(expectedEvidence),
+        );
       },
-      { expectedNote: qa.quickAddNoteA },
+      { expectedNote: qa.quickAddNoteA, expectedEvidence: qa.quickAddEvidence },
       { timeout: 15000 },
     );
 
@@ -439,6 +467,8 @@ try {
     const today = new Date().toISOString().slice(0, 10);
     await page.getByRole("button", { name: "Export" }).click();
     await page.locator("#exportForm").waitFor({ state: "visible", timeout: 15000 });
+    const linkedSheetHref = await page.locator("#openGoogleSheetExportLink").getAttribute("href");
+    assert.match(linkedSheetHref || "", /docs\.google\.com\/spreadsheets\/d\//i);
     await page.locator("#exportScopeSelect").selectOption("one");
     const exportStudentValue = await page.locator("#exportStudentSelect").evaluate((element, preferredName) => {
       const options = [...element.querySelectorAll("option")];
@@ -462,6 +492,10 @@ try {
     ]);
     assert.match(csvDownload.suggestedFilename(), /\.csv$/i);
     assert.match(excelDownload.suggestedFilename(), /\.xls$/i);
+
+    await page.locator("#exportFormatSelect").selectOption("google-sheet");
+    await page.getByRole("button", { name: "Sync to Google Sheet" }).click();
+    await waitForStatusText(page, "#exportStatus", /google sheets api credentials are not configured/i);
   });
 
   await stage("Logout and admin login", async () => {

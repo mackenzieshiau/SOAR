@@ -559,10 +559,33 @@
               <div>
                 <h2>Export</h2>
                 <p class="muted">
-                  Export student intervention logs as CSV or Excel.
+                  Export student intervention logs as CSV, Excel, or the linked Google Sheet.
                 </p>
               </div>
             </div>
+
+            <section class="card stack-md">
+              <div class="section-title-row">
+                <div>
+                  <h3>Linked Google Sheet</h3>
+                  <p class="muted">
+                    Exports target the shared intervention spreadsheet using first-name tabs per student.
+                  </p>
+                </div>
+                <a
+                  class="button button-secondary"
+                  id="openGoogleSheetExportLink"
+                  href="https://docs.google.com/spreadsheets/d/1BBFCU-FuQgb7VNDiTuotpbWGR0cdOTxJ3FxyRWd706A/edit?usp=drivesdk"
+                  rel="noreferrer"
+                  target="_blank"
+                >
+                  Open Sheet
+                </a>
+              </div>
+              <p class="field-note" id="exportGoogleSheetSummary">
+                The export view is linked to the shared spreadsheet directly.
+              </p>
+            </section>
 
             <section class="card stack-md">
               <form id="exportForm" class="export-form">
@@ -607,10 +630,11 @@
                   <select id="exportFormatSelect">
                     <option value="csv">CSV</option>
                     <option value="excel">Excel</option>
+                    <option value="google-sheet">Linked Google Sheet</option>
                   </select>
                 </label>
 
-                <button class="button button-primary button-lg" type="submit">
+                <button class="button button-primary button-lg" id="exportSubmitButton" type="submit">
                   Download Export
                 </button>
               </form>

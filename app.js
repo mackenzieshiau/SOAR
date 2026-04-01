@@ -1,8 +1,14 @@
 import { createDataService } from "./data-service.js";
 import {
+  DEFAULT_GOOGLE_SHEET_URL,
   QUICK_LINK_ACTION_LIMIT,
+  buildQuickAddEvidenceText,
+  buildGoogleSheetSyncPayload,
+  buildStudentSheetTabs,
   createQuickLinkAction,
   createQuickLinkDraft,
+  getQuickAddEvidenceTemplate,
+  normalizeSheetSyncConfig,
   normalizeStoredGroups,
   normalizeStoredQuickLinks,
 } from "./app-logic.js";
@@ -127,6 +133,8 @@ const QUICK_ADD_INTERVENTION_CAP_KEYS = {
 };
 const STUDENT_GROUPS_SETTING_KEY = "studentGroups";
 const QUICK_LINKS_SETTING_KEY = "quickLinks";
+const GOOGLE_SHEET_HIGHLIGHT_SETTING_KEY = "googleSheetHighlightDisparities";
+const DEFAULT_GOOGLE_SHEET_SYNC_ENDPOINT = "/api/google-sheet-sync";
 const APP_INTERVENTION_CAPS = {
   math: {
     mathVocabulary: 4,
@@ -178,6 +186,19 @@ function createQuickAddState() {
     studentEntries: {},
     statusMessage: "",
     statusTone: "neutral",
+  };
+}
+
+function createQuickAddStudentEntry(overrides = {}) {
+  return {
+    notes: String(overrides.notes || ""),
+    xp: String(overrides.xp || ""),
+    overrideNote: String(overrides.overrideNote || ""),
+    evidenceSelections: Array.isArray(overrides.evidenceSelections)
+      ? overrides.evidenceSelections
+          .map((value) => String(value || "").trim())
+          .filter(Boolean)
+      : [],
   };
 }
 
@@ -396,6 +417,9 @@ const dom = {
   exportStartDateInput: document.querySelector("#exportStartDateInput"),
   exportEndDateInput: document.querySelector("#exportEndDateInput"),
   exportFormatSelect: document.querySelector("#exportFormatSelect"),
+  exportSubmitButton: document.querySelector("#exportSubmitButton"),
+  exportGoogleSheetSummary: document.querySelector("#exportGoogleSheetSummary"),
+  openGoogleSheetExportLink: document.querySelector("#openGoogleSheetExportLink"),
   exportStatus: document.querySelector("#exportStatus"),
   analyticsFilterForm: document.querySelector("#analyticsFilterForm"),
   analyticsStudentSelect: document.querySelector("#analyticsStudentSelect"),
@@ -570,6 +594,7 @@ function bindEvents() {
   dom.assignmentGroups.addEventListener("change", handleAssignmentToggle);
   dom.exportScopeSelect.addEventListener("change", syncExportFields);
   dom.exportRangeTypeSelect.addEventListener("change", syncExportFields);
+  dom.exportFormatSelect.addEventListener("change", syncExportFields);
   dom.exportForm.addEventListener("submit", handleExportSubmit);
   dom.analyticsFilterForm.addEventListener("change", handleAnalyticsFilterChange);
 
@@ -694,6 +719,21 @@ function parseStoredCollection(key, fallback = []) {
     console.warn(`Unable to parse stored collection for ${key}.`, error);
     return fallback;
   }
+}
+
+function getGoogleSheetSyncConfig() {
+  return normalizeSheetSyncConfig(
+    {
+      googleSheetUrl: window.SOAR_CONFIG?.googleSheetUrl || DEFAULT_GOOGLE_SHEET_URL,
+      googleSheetId: window.SOAR_CONFIG?.googleSheetId,
+      googleSheetSyncEndpointUrl:
+        window.SOAR_CONFIG?.googleSheetSyncEndpointUrl || DEFAULT_GOOGLE_SHEET_SYNC_ENDPOINT,
+      googleSheetHighlightDisparities:
+        window.SOAR_CONFIG?.googleSheetHighlightDisparities
+        ?? state.data.authSettings[GOOGLE_SHEET_HIGHLIGHT_SETTING_KEY],
+    },
+    DEFAULT_GOOGLE_SHEET_URL,
+  );
 }
 
 async function refreshData() {
@@ -1032,19 +1072,16 @@ function renderQuickAddStudentRows() {
   const selectedStudents = state.quickAdd.selectedStudentIds
     .map((studentId) => getStudentById(studentId))
     .filter(Boolean);
+  const interventionName = resolveQuickAddInterventionName();
+  const evidenceTemplate = getQuickAddEvidenceTemplate(interventionName);
 
   dom.quickAddStudentRows.innerHTML = selectedStudents.length
     ? selectedStudents
         .map((student) => {
-          const entry = state.quickAdd.studentEntries[student.id] || {
-            notes: "",
-            xp: "",
-            overrideNote: "",
-          };
+          const entry = createQuickAddStudentEntry(state.quickAdd.studentEntries[student.id]);
           const todayTotal = sumXp(
             getStudentInterventions(student.id).filter((item) => item.date === toIsoDate(new Date())),
           );
-          const interventionName = resolveQuickAddInterventionName();
           const proposedXp = String(entry.xp ?? "").trim() ? Number.parseInt(entry.xp, 10) : 2;
           const assessment =
             state.quickAdd.locked
@@ -1070,16 +1107,51 @@ function renderQuickAddStudentRows() {
                 <span class="inline-badge">Today ${todayTotal} XP</span>
               </div>
               <div class="quick-entry-row-grid">
-                <label class="field">
-                  <span>Notes</span>
-                  <textarea
-                    rows="3"
-                    data-student-id="${escapeHtml(student.id)}"
-                    data-field="notes"
-                    placeholder="Add a quick note for this student"
-                    ${state.quickAdd.locked ? "" : "disabled"}
-                  >${escapeHtml(entry.notes)}</textarea>
-                </label>
+                <div class="quick-entry-main">
+                  <label class="field">
+                    <span>Notes</span>
+                    <textarea
+                      rows="3"
+                      data-student-id="${escapeHtml(student.id)}"
+                      data-field="notes"
+                      placeholder="Add a quick note for this student"
+                      ${state.quickAdd.locked ? "" : "disabled"}
+                    >${escapeHtml(entry.notes)}</textarea>
+                  </label>
+                  ${
+                    evidenceTemplate.options.length
+                      ? `
+                        <div class="quick-entry-evidence">
+                          <span class="quick-entry-evidence-label">Evidence</span>
+                          <div class="quick-entry-evidence-options">
+                            ${evidenceTemplate.options
+                              .map(
+                                (option) => `
+                                  <label class="check-chip quick-entry-evidence-option">
+                                    <input
+                                      type="checkbox"
+                                      data-student-id="${escapeHtml(student.id)}"
+                                      data-field="evidenceOption"
+                                      data-evidence-value="${escapeHtml(option)}"
+                                      ${entry.evidenceSelections.includes(option) ? "checked" : ""}
+                                      ${state.quickAdd.locked ? "" : "disabled"}
+                                    />
+                                    <span>${escapeHtml(option)}</span>
+                                  </label>
+                                `,
+                              )
+                              .join("")}
+                          </div>
+                          ${
+                            evidenceTemplate.caution
+                              ? `<p class="field-note quick-entry-evidence-note">${escapeHtml(evidenceTemplate.caution)}</p>`
+                              : ""
+                          }
+                        </div>
+                      `
+                      : ""
+                  }
+                </div>
                 <label class="field small-field">
                   <span>XP</span>
                   <input
@@ -3040,6 +3112,11 @@ function renderExportOptions() {
     dom.exportStudentSelect.value = activeStudents[0].id;
   }
 
+  const sheetConfig = getGoogleSheetSyncConfig();
+  const tabs = buildStudentSheetTabs(activeStudents);
+  dom.openGoogleSheetExportLink.href = sheetConfig.spreadsheetUrl || DEFAULT_GOOGLE_SHEET_URL;
+  dom.exportGoogleSheetSummary.textContent =
+    `Exports will update ${tabs.length} first-name tab${tabs.length === 1 ? "" : "s"} in the linked sheet and request disparity highlighting for changed rows.`;
   syncExportFields();
 }
 
@@ -3547,10 +3624,10 @@ function applyQuickLinkAction(quickLink, action) {
   state.quickAdd.studentEntries = Object.fromEntries(
     state.quickAdd.selectedStudentIds.map((studentId) => [
       studentId,
-      {
+      createQuickAddStudentEntry({
         notes: action.notes || "",
         xp: String(action.xp || "2"),
-      },
+      }),
     ]),
   );
   state.quickAdd.intervention = QUICK_ADD_CUSTOM_VALUE;
@@ -3680,11 +3757,30 @@ function handleQuickAddStudentRowsInput(event) {
     return;
   }
 
-  const current = state.quickAdd.studentEntries[studentId] || { notes: "", xp: "" };
-  state.quickAdd.studentEntries[studentId] = {
-    ...current,
-    [field]: event.target.value,
-  };
+  const current = createQuickAddStudentEntry(state.quickAdd.studentEntries[studentId]);
+  if (field === "evidenceOption") {
+    const evidenceValue = String(event.target.getAttribute("data-evidence-value") || "").trim();
+    if (!evidenceValue) {
+      return;
+    }
+
+    const evidenceSelections = new Set(current.evidenceSelections);
+    if (event.target.checked) {
+      evidenceSelections.add(evidenceValue);
+    } else {
+      evidenceSelections.delete(evidenceValue);
+    }
+
+    state.quickAdd.studentEntries[studentId] = {
+      ...current,
+      evidenceSelections: [...evidenceSelections],
+    };
+  } else {
+    state.quickAdd.studentEntries[studentId] = {
+      ...current,
+      [field]: event.target.value,
+    };
+  }
   clearQuickAddStatus();
 }
 
@@ -3724,7 +3820,7 @@ async function handleQuickAddSave() {
   const timestamp = new Date().toISOString();
   const selectedGroup = getGroupById(state.quickAdd.groupId);
   const entries = state.quickAdd.selectedStudentIds.map((studentId) => {
-    const studentEntry = state.quickAdd.studentEntries[studentId] || { notes: "", xp: "" };
+    const studentEntry = createQuickAddStudentEntry(state.quickAdd.studentEntries[studentId]);
     const rawXp = String(studentEntry.xp ?? "").trim();
     const parsedXp = rawXp ? Number.parseInt(rawXp, 10) : 2;
     const xpAwarded = Number.isFinite(parsedXp) ? parsedXp : 2;
@@ -3741,7 +3837,11 @@ async function handleQuickAddSave() {
       taskDetail: interventionName,
       xpAwarded,
       notes,
-      evidenceOfProduction: notes || interventionName,
+      evidenceOfProduction: buildQuickAddEvidenceText(
+        studentEntry.evidenceSelections,
+        notes,
+        interventionName,
+      ),
       repeatedInNewContext: false,
       newContextNote: "",
       groupName: selectedGroup?.name || "",
@@ -3795,10 +3895,9 @@ function addQuickAddStudent(studentId) {
     state.quickAdd.selectedStudentIds = [...state.quickAdd.selectedStudentIds, studentId];
   }
 
-  state.quickAdd.studentEntries[studentId] = state.quickAdd.studentEntries[studentId] || {
-    notes: "",
-    xp: "",
-  };
+  state.quickAdd.studentEntries[studentId] = createQuickAddStudentEntry(
+    state.quickAdd.studentEntries[studentId],
+  );
   state.quickAdd.studentQuery = "";
   state.quickAdd.intervention = "";
   state.quickAdd.customIntervention = "";
@@ -3825,7 +3924,7 @@ function addQuickAddGroup(groupId) {
   state.quickAdd.studentEntries = Object.fromEntries(
     state.quickAdd.selectedStudentIds.map((studentId) => [
       studentId,
-      state.quickAdd.studentEntries[studentId] || { notes: "", xp: "" },
+      createQuickAddStudentEntry(state.quickAdd.studentEntries[studentId]),
     ]),
   );
   state.quickAdd.studentQuery = "";
@@ -4207,9 +4306,24 @@ function syncExportDefaults() {
 function syncExportFields() {
   const exportOneStudent = dom.exportScopeSelect.value === "one";
   const exportCustomRange = dom.exportRangeTypeSelect.value === "custom";
+  const exportToGoogleSheet = dom.exportFormatSelect.value === "google-sheet";
+  const sheetConfig = getGoogleSheetSyncConfig();
   dom.exportStudentField.classList.toggle("hidden", !exportOneStudent);
   dom.customStartField.classList.toggle("hidden", !exportCustomRange);
   dom.customEndField.classList.toggle("hidden", !exportCustomRange);
+  dom.exportSubmitButton.textContent = exportToGoogleSheet
+    ? "Sync to Google Sheet"
+    : "Download Export";
+
+  if (exportToGoogleSheet) {
+    dom.exportGoogleSheetSummary.textContent =
+      "Sync will upsert rows into the linked spreadsheet, reuse first-name tabs, and highlight new or changed rows.";
+  } else {
+    const activeStudents = getActiveStudents();
+    const tabs = buildStudentSheetTabs(activeStudents);
+    dom.exportGoogleSheetSummary.textContent =
+      `Exports can still download as files, or sync ${tabs.length} student tab${tabs.length === 1 ? "" : "s"} to the linked spreadsheet.`;
+  }
 }
 
 async function handleExportSubmit(event) {
@@ -4236,11 +4350,31 @@ async function handleExportSubmit(event) {
       throw new Error("Please choose a valid date range.");
     }
 
+    const studentId = scope === "one" ? dom.exportStudentSelect.value : null;
     const rows = buildExportRows({
-      studentId: scope === "one" ? dom.exportStudentSelect.value : null,
+      studentId,
       startDate,
       endDate,
     });
+    const records = buildExportSheetRecords({
+      studentId,
+      startDate,
+      endDate,
+    });
+
+    if (format === "google-sheet") {
+      const result = await syncExportToGoogleSheet({
+        records,
+        startDate,
+        endDate,
+      });
+      setStatus(
+        dom.exportStatus,
+        `${records.length} intervention record${records.length === 1 ? "" : "s"} synced to Google Sheet.${result?.message ? ` ${result.message}` : ""}`,
+        "success",
+      );
+      return;
+    }
 
     const fileLabel =
       scope === "one"
@@ -4269,7 +4403,43 @@ async function handleExportSubmit(event) {
   }
 }
 
-function buildExportRows({ studentId, startDate, endDate }) {
+async function syncExportToGoogleSheet({ records, startDate, endDate }) {
+  const sheetConfig = getGoogleSheetSyncConfig();
+  if (!sheetConfig.spreadsheetUrl || !sheetConfig.spreadsheetId) {
+    throw new Error("The shared Google Sheet link is missing from the app configuration.");
+  }
+  const response = await fetch(sheetConfig.syncEndpointUrl, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(
+      buildGoogleSheetSyncPayload({
+        records,
+        students: getActiveStudents(),
+        startDate,
+        endDate,
+        sheetConfig,
+      }),
+    ),
+  });
+
+  const responseText = await response.text();
+  let parsedResponse = {};
+  try {
+    parsedResponse = responseText ? JSON.parse(responseText) : {};
+  } catch {
+    parsedResponse = {};
+  }
+
+  if (!response.ok || parsedResponse?.ok === false) {
+    throw new Error(parsedResponse?.error || `Sheet sync failed with status ${response.status}.`);
+  }
+
+  return parsedResponse;
+}
+
+function buildExportSheetRecords({ studentId, startDate, endDate }) {
   const studentMap = new Map(state.data.students.map((student) => [student.id, student]));
   const contentAreaMap = new Map(
     state.data.contentAreas.map((contentArea) => [contentArea.id, contentArea]),
@@ -4280,10 +4450,24 @@ function buildExportRows({ studentId, startDate, endDate }) {
     .filter((record) => !studentId || record.studentId === studentId)
     .filter((record) => isDateWithinRange(record.date, startDate, endDate))
     .sort((left, right) => new Date(left.timestamp) - new Date(right.timestamp))
+    .map((record) => ({
+      ...record,
+      studentName: studentMap.get(record.studentId)?.name || "",
+      contentAreaName: contentAreaMap.get(record.contentAreaId)?.name || "",
+      appName: appMap.get(record.appId)?.name || "",
+    }));
+}
+
+function buildExportRows({ studentId, startDate, endDate }) {
+  return buildExportSheetRecords({
+    studentId,
+    startDate,
+    endDate,
+  })
     .map((record) => {
-      const student = studentMap.get(record.studentId);
+      const student = getStudentById(record.studentId);
       return {
-        studentName: student?.name || "",
+        studentName: record.studentName || student?.name || "",
         band: student?.band || "",
         gradeBand: student?.gradeBand || "",
         widaLevel: student?.widaLevel || "",
@@ -4291,8 +4475,8 @@ function buildExportRows({ studentId, startDate, endDate }) {
         timestamp: formatDateTime(record.timestamp),
         teacherName: record.teacherName,
         groupName: record.groupName || "",
-        contentArea: contentAreaMap.get(record.contentAreaId)?.name || "",
-        app: appMap.get(record.appId)?.name || "",
+        contentArea: record.contentAreaName,
+        app: record.appName,
         interventionCategory: record.interventionCategory,
         taskDetail: record.taskDetail,
         xpAwarded: record.xpAwarded,
@@ -4900,6 +5084,9 @@ function getQuickAddStudentMatchRank(student, normalizedQuery) {
 
 function syncQuickAddState() {
   syncQuickAddTeacherDefault();
+  const validEvidenceOptions = new Set(
+    getQuickAddEvidenceTemplate(resolveQuickAddInterventionName()).options,
+  );
   const validStudentIds = new Set(getActiveStudents().map((student) => student.id));
   if (state.quickAdd.groupId && !getGroupById(state.quickAdd.groupId)) {
     state.quickAdd.groupId = "";
@@ -4909,10 +5096,18 @@ function syncQuickAddState() {
   );
 
   state.quickAdd.studentEntries = Object.fromEntries(
-    state.quickAdd.selectedStudentIds.map((studentId) => [
-      studentId,
-      state.quickAdd.studentEntries[studentId] || { notes: "", xp: "" },
-    ]),
+    state.quickAdd.selectedStudentIds.map((studentId) => {
+      const entry = createQuickAddStudentEntry(state.quickAdd.studentEntries[studentId]);
+      return [
+        studentId,
+        {
+          ...entry,
+          evidenceSelections: entry.evidenceSelections.filter((option) =>
+            validEvidenceOptions.has(option),
+          ),
+        },
+      ];
+    }),
   );
 
   const contentAreas = getQuickAddContentAreas();

@@ -511,6 +511,40 @@ textarea {
   grid-template-columns: minmax(0, 1fr) minmax(140px, 180px);
 }
 
+.quick-entry-main,
+.quick-entry-evidence {
+  display: grid;
+  gap: 10px;
+}
+
+.quick-entry-evidence-label {
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.quick-entry-evidence-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.quick-entry-evidence-option {
+  align-items: flex-start;
+  text-align: left;
+  line-height: 1.4;
+}
+
+.quick-entry-evidence-option span {
+  display: inline-block;
+}
+
+.quick-entry-evidence-note {
+  margin-top: -2px;
+}
+
 .section-heading {
   display: grid;
   gap: 4px;

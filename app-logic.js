@@ -1,7 +1,297 @@
 export const QUICK_LINK_ACTION_LIMIT = 3;
+export const DEFAULT_GOOGLE_SHEET_URL =
+  "https://docs.google.com/spreadsheets/d/1BBFCU-FuQgb7VNDiTuotpbWGR0cdOTxJ3FxyRWd706A/edit?usp=drivesdk";
+export const QUICK_ADD_EVIDENCE_LIBRARY = {
+  tpr: {
+    title: "TPR / physical encoding",
+    options: [
+      "Student produces the target sound correctly",
+      "Student performs the matching gesture or movement",
+      "Student identifies the sound or pattern inside a word",
+      "Student repeats the sound-word connection correctly 3 times",
+      "Tracing the letter in the air",
+      "Tapping the letter inside the word",
+      "Clapping each sound",
+      "Using a consistent phoneme gesture",
+    ],
+  },
+  flashcards: {
+    title: "Flashcards / notes",
+    options: [
+      "Student decodes the word independently after scaffold",
+      "Student segments and blends correctly",
+      "Student shows comprehension by acting it out, matching the picture, pointing, or briefly explaining it",
+    ],
+    caution: "Native language can appear on the flashcard, but it does not earn separate XP by itself.",
+  },
+  writingBoards: {
+    title: "Writing boards",
+    options: [
+      "Student writes the target word, phrase, equation, or breakdown",
+      "Student segments sounds or identifies phonics structure",
+      "Student reads it aloud",
+      "Student blends correctly",
+      "Student explains meaning, demonstrates understanding, or gives reasoning verbally",
+      "Student writes the target word",
+      "Student breaks word into segments or blends",
+      "Student identifies vowel teams or consonant blends",
+      "Student rewrites or restates a math problem",
+      "Student solves the problem correctly",
+      "Student explains math reasoning verbally",
+      "Student breaks a multisyllabic word",
+      "Student writes root + ending",
+      "Student explains the syllable break",
+    ],
+    caution: "For some lower WIDA levels, partial completion is allowed, but at higher levels all parts are required.",
+  },
+  translanguaging: {
+    title: "Native language / translanguaging",
+    options: [
+      "Student identifies the key vocabulary in English",
+      "Student identifies the equivalent in the home language",
+      "Student returns to English to complete or explain the problem",
+      "Student writes the home-language equivalent and then completes decoding in English",
+    ],
+    caution: "Native language alone does not count as its own XP.",
+  },
+  choralReading: {
+    title: "Choral reading",
+    options: [
+      "Student reads chorally",
+      "Student then reads independently",
+      "Student self-corrects or repeats correctly 3 times",
+    ],
+  },
+  miniMissionTier1: {
+    title: "Mini-missions Tier 1",
+    options: [
+      "Student identifies a pattern, word, symbol, or feature correctly",
+      "Student locates it in text, the room, hallway, or materials",
+      "Student identifies numerator / denominator or other math label",
+      "Student locates a vowel team, consonant blend, or sight word in context",
+      "Student matches a term to a symbol or picture",
+    ],
+  },
+  miniMissionTier2: {
+    title: "Mini-missions Tier 2",
+    options: [
+      "Student uses the concept to build, represent, generate, or transform something correctly",
+      "Student converts an equation to word form or manipulatives",
+      "Student writes the vowel team and generates a new word",
+      "Student builds a word with letter tiles",
+      "Student combines or replaces sounds to create a new word",
+    ],
+  },
+  miniMissionTier3: {
+    title: "Mini-missions Tier 3",
+    options: [
+      "Student explains reasoning",
+      "Student compares structures or meanings",
+      "Student justifies a solution or interpretation",
+      "Student analyzes information with language production",
+      "Student explains how a sound, blend, or pattern changes meaning",
+    ],
+  },
+  mathVocabulary: {
+    title: "Math vocabulary comprehension",
+    options: [
+      "Student correctly solves a problem using the concept",
+      "Student writes a correct equation demonstrating the concept",
+      "Student verbally demonstrates understanding in English or the home language",
+      "Student identifies and applies the concept during guided practice",
+    ],
+    caution: "Gesture alone or just repeating the word does not count.",
+  },
+};
 
 function asString(value) {
   return value == null ? "" : String(value);
+}
+
+function toBoolean(value, fallback = false) {
+  if (typeof value === "boolean") {
+    return value;
+  }
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (["true", "1", "yes", "on"].includes(normalized)) {
+      return true;
+    }
+    if (["false", "0", "no", "off"].includes(normalized)) {
+      return false;
+    }
+  }
+  return fallback;
+}
+
+export function extractGoogleSpreadsheetId(value) {
+  const normalizedValue = asString(value).trim();
+  if (!normalizedValue) {
+    return "";
+  }
+  const urlMatch = normalizedValue.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
+  if (urlMatch) {
+    return urlMatch[1];
+  }
+  return /^[a-zA-Z0-9-_]{20,}$/.test(normalizedValue) ? normalizedValue : "";
+}
+
+export function normalizeSheetSyncConfig(rawSettings = {}, fallbackUrl = DEFAULT_GOOGLE_SHEET_URL) {
+  const spreadsheetUrl = asString(rawSettings?.googleSheetUrl || fallbackUrl).trim();
+  const spreadsheetId = extractGoogleSpreadsheetId(
+    rawSettings?.googleSheetId || spreadsheetUrl,
+  );
+  return {
+    spreadsheetUrl,
+    spreadsheetId,
+    syncEndpointUrl: asString(rawSettings?.googleSheetSyncEndpointUrl || "").trim(),
+    highlightDisparities: toBoolean(rawSettings?.googleSheetHighlightDisparities, true),
+  };
+}
+
+export function buildStudentSheetTabs(students = []) {
+  const nameCounts = new Map();
+  return (Array.isArray(students) ? students : [])
+    .map((student) => {
+      const studentId = asString(student?.id).trim();
+      const fullName = asString(student?.name).trim();
+      if (!studentId || !fullName) {
+        return null;
+      }
+      const [firstName = "Student"] = fullName.split(/\s+/);
+      const baseName = firstName.replace(/[:\\/?*\[\]]/g, "").slice(0, 80) || "Student";
+      const key = baseName.toLowerCase();
+      const nextCount = (nameCounts.get(key) || 0) + 1;
+      nameCounts.set(key, nextCount);
+      return {
+        studentId,
+        studentName: fullName,
+        sheetName: nextCount === 1 ? baseName : `${baseName}-${nextCount}`,
+      };
+    })
+    .filter(Boolean);
+}
+
+export function buildGoogleSheetSyncPayload({
+  records = [],
+  students = [],
+  startDate = "",
+  endDate = "",
+  sheetConfig = {},
+} = {}) {
+  const normalizedConfig = normalizeSheetSyncConfig(sheetConfig);
+  const tabMap = new Map(
+    buildStudentSheetTabs(students).map((tab) => [tab.studentId, tab]),
+  );
+  const groupedRows = new Map();
+
+  for (const record of Array.isArray(records) ? records : []) {
+    const studentId = asString(record?.studentId).trim();
+    const tab = tabMap.get(studentId);
+    if (!tab) {
+      continue;
+    }
+    if (!groupedRows.has(tab.sheetName)) {
+      groupedRows.set(tab.sheetName, {
+        studentId: tab.studentId,
+        studentName: tab.studentName,
+        sheetName: tab.sheetName,
+        rows: [],
+      });
+    }
+    groupedRows.get(tab.sheetName).rows.push({
+      interventionId: asString(record?.id).trim(),
+      studentId,
+      studentName: tab.studentName,
+      date: asString(record?.date).trim(),
+      timestamp: asString(record?.timestamp).trim(),
+      teacherName: asString(record?.teacherName).trim(),
+      groupName: asString(record?.groupName).trim(),
+      contentArea: asString(record?.contentAreaName).trim(),
+      app: asString(record?.appName).trim(),
+      interventionCategory: asString(record?.interventionCategory).trim(),
+      taskDetail: asString(record?.taskDetail).trim(),
+      xpAwarded: asString(record?.xpAwarded).trim(),
+      notes: asString(record?.notes).trim(),
+      evidenceOfProduction: asString(record?.evidenceOfProduction).trim(),
+      repeatedInNewContext: record?.repeatedInNewContext ? "Yes" : "No",
+      newContextNote: asString(record?.newContextNote).trim(),
+    });
+  }
+
+  return {
+    spreadsheetId: normalizedConfig.spreadsheetId,
+    spreadsheetUrl: normalizedConfig.spreadsheetUrl,
+    syncMode: "upsert-by-intervention-id",
+    highlightDisparities: normalizedConfig.highlightDisparities,
+    range: {
+      startDate: asString(startDate).trim(),
+      endDate: asString(endDate).trim(),
+    },
+    sheets: [...groupedRows.values()],
+  };
+}
+
+function normalizeInterventionKey(value) {
+  return asString(value).trim().toLowerCase();
+}
+
+export function getQuickAddEvidenceTemplate(interventionName) {
+  const normalized = normalizeInterventionKey(interventionName);
+  if (!normalized) {
+    return { title: "", options: [], caution: "" };
+  }
+  if (normalized === "tpr") {
+    return QUICK_ADD_EVIDENCE_LIBRARY.tpr;
+  }
+  if (normalized === "notes") {
+    return QUICK_ADD_EVIDENCE_LIBRARY.flashcards;
+  }
+  if (
+    normalized === "writing board"
+    || normalized === "worksheet"
+    || normalized === "problem deconstruction"
+    || normalized === "game"
+    || normalized === "reading"
+    || normalized === "task cards"
+    || normalized === "audio"
+    || normalized === "kinestics"
+  ) {
+    return QUICK_ADD_EVIDENCE_LIBRARY.writingBoards;
+  }
+  if (normalized === "translanguaging") {
+    return QUICK_ADD_EVIDENCE_LIBRARY.translanguaging;
+  }
+  if (normalized === "choral repetition") {
+    return QUICK_ADD_EVIDENCE_LIBRARY.choralReading;
+  }
+  if (normalized.startsWith("mini-mission tier 1")) {
+    return QUICK_ADD_EVIDENCE_LIBRARY.miniMissionTier1;
+  }
+  if (normalized.startsWith("mini-mission tier 2")) {
+    return QUICK_ADD_EVIDENCE_LIBRARY.miniMissionTier2;
+  }
+  if (normalized.startsWith("mini-mission tier 3")) {
+    return QUICK_ADD_EVIDENCE_LIBRARY.miniMissionTier3;
+  }
+  if (normalized === "math vocabulary" || normalized === "comprehension") {
+    return QUICK_ADD_EVIDENCE_LIBRARY.mathVocabulary;
+  }
+  return { title: "", options: [], caution: "" };
+}
+
+export function buildQuickAddEvidenceText(selectedEvidence = [], fallbackText = "", interventionName = "") {
+  const selected = (Array.isArray(selectedEvidence) ? selectedEvidence : [])
+    .map((value) => asString(value).trim())
+    .filter(Boolean);
+  if (selected.length) {
+    return selected.join("; ");
+  }
+  const fallback = asString(fallbackText).trim();
+  if (fallback) {
+    return fallback;
+  }
+  return asString(interventionName).trim();
 }
 
 export function createQuickLinkAction(overrides = {}) {

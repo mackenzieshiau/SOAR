@@ -2,4 +2,10 @@ tmp/
 skills/
 .playwright-cli/
 output/
+dist/
 node_modules/
+.env
+.env.*
+credentials.json
+service-account*.json
+soar-*.json
