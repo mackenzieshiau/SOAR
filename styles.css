@@ -704,11 +704,28 @@ textarea {
 
 .overview-grid {
   grid-template-columns: minmax(0, 1.2fr) minmax(260px, 0.8fr);
+  align-items: start;
+  gap: 24px;
+}
+
+.overview-grid > * {
+  min-width: 0;
+  align-self: start;
 }
 
 .section-block {
   display: grid;
   gap: 8px;
+  align-content: start;
+}
+
+.profile-main-column,
+.profile-side-column {
+  align-content: start;
+}
+
+.profile-identity-block {
+  padding: 2px 0 4px;
 }
 
 .app-pill-row {
@@ -773,6 +790,13 @@ textarea {
 .assignment-card p,
 .profile-overview p {
   margin: 0;
+}
+
+.profile-app-management .muted,
+.assignment-card .muted {
+  max-width: 34ch;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
 }
 
 .assignment-apps {

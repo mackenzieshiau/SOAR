@@ -6281,8 +6281,8 @@ function renderStudentProfile() {
   dom.studentProfileSummary.textContent = summaryParts.join(" | ");
   dom.studentOverviewCard.innerHTML = `
     <div class="overview-grid">
-      <div class="stack-md">
-        <div class="section-block">
+      <div class="stack-md profile-main-column">
+        <div class="section-block profile-identity-block">
           <p class="eyebrow">Student Details</p>
           <h3>${escapeHtml(student.name)}</h3>
           <p class="muted">${escapeHtml(summaryParts.join(" | "))}</p>
@@ -6353,7 +6353,7 @@ function renderStudentProfile() {
           Delete Student
         </button>
       </div>
-      <div class="stack-sm">
+      <div class="stack-sm profile-side-column">
         ${renderStudentProfileAppManager(student.id)}
       </div>
     </div>
