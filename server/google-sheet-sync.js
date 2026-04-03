@@ -31,6 +31,8 @@ export const GOOGLE_SHEET_HEADERS = [
   "WIDA Justification",
   "WIDA Notes",
 ];
+export const GOOGLE_SHEET_STATUS_COLUMN_INDEX = GOOGLE_SHEET_HEADERS.length + 1;
+export const GOOGLE_SHEET_REQUIRED_COLUMN_COUNT = GOOGLE_SHEET_STATUS_COLUMN_INDEX + 1;
 
 const HEADER_BACKGROUND = { red: 0.898, green: 0.925, blue: 0.976 };
 const NEW_ROW_BACKGROUND = { red: 0.863, green: 0.965, blue: 0.902 };
@@ -184,13 +186,37 @@ async function createSheetsClient(env = process.env) {
   });
 }
 
+export function buildSheetGridResizeRequests(sheetId, gridProperties = {}, rowCount = 0) {
+  const requests = [];
+  const currentColumnCount = Number(gridProperties?.columnCount || 0);
+  const currentRowCount = Number(gridProperties?.rowCount || 0);
+  const nextRowCount = Math.max(currentRowCount, rowCount, 1);
+
+  if (currentColumnCount < GOOGLE_SHEET_REQUIRED_COLUMN_COUNT || currentRowCount < nextRowCount) {
+    requests.push({
+      updateSheetProperties: {
+        properties: {
+          sheetId,
+          gridProperties: {
+            columnCount: Math.max(currentColumnCount, GOOGLE_SHEET_REQUIRED_COLUMN_COUNT),
+            rowCount: nextRowCount,
+          },
+        },
+        fields: "gridProperties.columnCount,gridProperties.rowCount",
+      },
+    });
+  }
+
+  return requests;
+}
+
 async function ensureSheet(sheets, spreadsheetId, title) {
   const metadata = await sheets.spreadsheets.get({ spreadsheetId });
   const existingSheet = metadata.data.sheets?.find(
     (sheet) => sheet.properties?.title === title,
   );
   if (existingSheet?.properties?.sheetId != null) {
-    return existingSheet.properties.sheetId;
+    return existingSheet.properties;
   }
 
   const addSheetResponse = await sheets.spreadsheets.batchUpdate({
@@ -208,7 +234,7 @@ async function ensureSheet(sheets, spreadsheetId, title) {
     },
   });
 
-  return addSheetResponse.data.replies?.[0]?.addSheet?.properties?.sheetId;
+  return addSheetResponse.data.replies?.[0]?.addSheet?.properties || null;
 }
 
 function quoteSheetTitle(title) {
@@ -311,7 +337,7 @@ function buildFormatRequests(sheetId, rowCount, finalRows, removedCount) {
       start: {
         sheetId,
         rowIndex: 0,
-        columnIndex: GOOGLE_SHEET_HEADERS.length + 1,
+        columnIndex: GOOGLE_SHEET_STATUS_COLUMN_INDEX,
       },
       rows: [
         {
@@ -354,13 +380,31 @@ async function syncStudentSheet(sheets, spreadsheetId, studentSheet) {
     return { newRows: 0, changedRows: 0, removedRows: 0 };
   }
 
-  const sheetId = await ensureSheet(sheets, spreadsheetId, title);
+  const sheetProperties = await ensureSheet(sheets, spreadsheetId, title);
+  const sheetId = sheetProperties?.sheetId;
+  if (sheetId == null) {
+    throw new Error(`Unable to resolve Google Sheet tab for ${title}.`);
+  }
   const existingValues = await readSheetRows(sheets, spreadsheetId, title);
   const existingRows = existingValues.slice(1);
   const incomingRows = (studentSheet.rows || []).map(buildSheetRowValues);
   const plan = planSheetSync(existingRows, incomingRows);
   const nextValues = [GOOGLE_SHEET_HEADERS, ...plan.finalRows.map((row) => row.values)];
   const clearStartRow = nextValues.length + 1;
+
+  const gridResizeRequests = buildSheetGridResizeRequests(
+    sheetId,
+    sheetProperties?.gridProperties,
+    Math.max(nextValues.length + 10, existingValues.length + 10),
+  );
+  if (gridResizeRequests.length) {
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId,
+      requestBody: {
+        requests: gridResizeRequests,
+      },
+    });
+  }
 
   await sheets.spreadsheets.values.clear({
     spreadsheetId,

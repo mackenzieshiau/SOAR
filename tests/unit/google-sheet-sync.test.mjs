@@ -3,7 +3,9 @@ import assert from "node:assert/strict";
 
 import {
   GOOGLE_SHEET_HEADERS,
+  GOOGLE_SHEET_REQUIRED_COLUMN_COUNT,
   buildSheetRowValues,
+  buildSheetGridResizeRequests,
   planSheetSync,
 } from "../../server/google-sheet-sync.js";
 
@@ -86,4 +88,26 @@ test("planSheetSync identifies new, changed, and removed rows", () => {
     plan.finalRows.map((row) => row.status),
     ["changed", "new"],
   );
+});
+
+test("buildSheetGridResizeRequests expands narrow template tabs before formatting", () => {
+  const requests = buildSheetGridResizeRequests(
+    77,
+    { columnCount: 25, rowCount: 5 },
+    12,
+  );
+
+  assert.equal(requests.length, 1);
+  assert.deepEqual(requests[0], {
+    updateSheetProperties: {
+      properties: {
+        sheetId: 77,
+        gridProperties: {
+          columnCount: GOOGLE_SHEET_REQUIRED_COLUMN_COUNT,
+          rowCount: 12,
+        },
+      },
+      fields: "gridProperties.columnCount,gridProperties.rowCount",
+    },
+  });
 });
