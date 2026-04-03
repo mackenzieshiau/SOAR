@@ -5,44 +5,46 @@
             <p class="eyebrow">Teacher Intervention Logging</p>
             <h1>SOAR Tracker</h1>
             <p class="muted">
-              Use the shared teacher code or sign in as an admin or guide.
+              Sign in as a teacher or admin to open your tracker workspace.
             </p>
           </div>
 
           <div class="login-panels">
-            <form
-              id="loginForm"
-              class="login-panel stack-md"
-              onsubmit="return window.soarFallbackTeacherLogin(event)"
-            >
+            <form id="loginForm" class="login-panel stack-md">
               <div>
                 <h2>Teacher Access</h2>
-                <p class="muted">Use the shared code for quick student logging.</p>
+                <p class="muted">Use your teacher username and password.</p>
               </div>
               <label class="field">
-                <span>Access Code</span>
+                <span>Username</span>
                 <input
-                  id="accessCodeInput"
-                  name="accessCode"
+                  id="teacherUsernameInput"
+                  name="username"
+                  autocomplete="username"
+                  required
+                />
+              </label>
+              <label class="field">
+                <span>Password</span>
+                <input
+                  id="teacherPasswordInput"
+                  name="password"
                   type="password"
-                  inputmode="text"
-                  maxlength="12"
-                  minlength="4"
-                  autocomplete="off"
+                  autocomplete="current-password"
                   required
                 />
               </label>
               <button class="button button-primary button-lg" type="submit">
-                Continue
+                Sign In
               </button>
               <p class="status-line" id="loginStatus"></p>
             </form>
 
             <form id="staffLoginForm" class="login-panel stack-md">
               <div>
-                <h2>Admin or Guide</h2>
+                <h2>Admin Access</h2>
                 <p class="muted">
-                  Use a username and password for managed access.
+                  Use the admin username and password for settings access.
                 </p>
               </div>
               <label class="field">
@@ -249,6 +251,10 @@
                 </section>
               </div>
             </section>
+
+            <footer class="screen-version-footer">
+              <span class="screen-version-badge" id="homeVersion">Version 1.0.1</span>
+            </footer>
           </section>
 
           <section id="studentsScreen" class="screen hidden">
@@ -338,6 +344,13 @@
                   </select>
                 </label>
                 <button
+                  class="button button-secondary"
+                  id="openAddStudentFromProfileButton"
+                  type="button"
+                >
+                  Add Student
+                </button>
+                <button
                   class="button button-primary button-lg"
                   id="openAddInterventionButton"
                   type="button"
@@ -348,29 +361,43 @@
             </div>
             <p class="status-line" id="studentStatusMessage"></p>
 
-            <section class="profile-overview card" id="studentOverviewCard"></section>
-            <section class="card stack-md" id="studentGroupPanel"></section>
-
-            <section class="card week-nav-card">
-              <div class="week-nav">
-                <button
-                  class="button button-secondary"
-                  id="previousWeekButton"
-                  type="button"
-                >
-                  Previous Week
-                </button>
-                <div>
-                  <p class="eyebrow">Selected Week</p>
-                  <h3 id="weekRangeLabel"></h3>
-                </div>
-                <button class="button button-secondary" id="nextWeekButton" type="button">
-                  Next Week
-                </button>
-              </div>
+            <section class="student-profile-tabs" id="studentProfileTabs">
+              <button class="button button-secondary is-active" type="button" data-student-tab="profile">
+                Profile
+              </button>
+              <button class="button button-secondary" type="button" data-student-tab="log">
+                Intervention Data
+              </button>
             </section>
 
-            <section id="dailyAccordion" class="accordion-list"></section>
+            <div id="studentProfileDetailsSection" class="stack-md">
+              <section class="profile-overview card" id="studentOverviewCard"></section>
+              <section class="card stack-md" id="studentGroupPanel"></section>
+              <section class="card stack-md" id="studentWidaPanel"></section>
+            </div>
+
+            <div id="studentInterventionSection" class="stack-md hidden">
+              <section class="card week-nav-card">
+                <div class="week-nav">
+                  <button
+                    class="button button-secondary"
+                    id="previousWeekButton"
+                    type="button"
+                  >
+                    Previous Week
+                  </button>
+                  <div>
+                    <p class="eyebrow">Selected Week</p>
+                    <h3 id="weekRangeLabel"></h3>
+                  </div>
+                  <button class="button button-secondary" id="nextWeekButton" type="button">
+                    Next Week
+                  </button>
+                </div>
+              </section>
+
+              <section id="dailyAccordion" class="accordion-list"></section>
+            </div>
           </section>
 
           <section id="settingsScreen" class="screen hidden">
@@ -378,7 +405,7 @@
               <div>
                 <h2>Settings</h2>
                 <p class="muted">
-                  Manage admin access, guide logins, content areas, apps, and student assignments.
+                  Manage admin access, teacher logins, content areas, apps, and student assignments.
                 </p>
               </div>
             </div>
@@ -388,7 +415,7 @@
                 <div>
                   <h3>Admin Access</h3>
                   <p class="muted">
-                    Manage guide logins and change the admin password.
+                    Manage teacher logins and change the admin password.
                   </p>
                 </div>
               </div>
@@ -423,9 +450,9 @@
                 <section class="settings-subsection stack-md">
                   <div class="section-title-row">
                     <div>
-                      <h4>Guide Logins</h4>
+                      <h4>Teacher Logins</h4>
                       <p class="muted">
-                        Create, update, activate, and deactivate guide access.
+                        Create, update, activate, and deactivate teacher access.
                       </p>
                     </div>
                   </div>
@@ -450,14 +477,14 @@
                       <span>Active</span>
                     </label>
                     <button class="button button-primary" type="submit">
-                      Save Guide
+                      Save Teacher
                     </button>
                     <button class="button button-ghost" type="button" id="resetGuideButton">
                       Clear
                     </button>
                   </form>
                   <p class="field-note">
-                    Leave the password blank while editing a guide to keep the current password.
+                    Leave the password blank while editing a teacher login to keep the current password.
                   </p>
                   <p id="guideStatus" class="status-line"></p>
                   <div id="guideList" class="stack-sm"></div>
@@ -630,7 +657,7 @@
                   <select id="exportFormatSelect">
                     <option value="csv">CSV</option>
                     <option value="excel">Excel</option>
-                    <option value="google-sheet">Linked Google Sheet</option>
+                    <option value="google-sheet" selected>Linked Google Sheet</option>
                   </select>
                 </label>
 
@@ -716,7 +743,7 @@
         <div class="modal-header">
           <div>
             <p class="eyebrow">Student</p>
-            <h3>Add Student</h3>
+            <h3 id="studentModalTitle">Add Student</h3>
           </div>
           <button class="icon-button" type="button" data-close-modal="studentModal">
             x
@@ -728,6 +755,14 @@
           <input id="studentNameInput" required />
         </label>
         <div class="modal-grid">
+          <label class="field">
+            <span>School Year</span>
+            <input id="studentSchoolYearInput" placeholder="2025-2026" />
+          </label>
+          <label class="field">
+            <span>Class Code</span>
+            <input id="studentClassCodeInput" placeholder="R101" />
+          </label>
           <label class="field">
             <span>Band</span>
             <select id="studentBandInput" required>
@@ -789,6 +824,9 @@
         </div>
         <div class="modal-actions">
           <button class="button button-primary" type="submit">Save Student</button>
+          <button class="button button-danger hidden" id="studentDeleteButton" type="button">
+            Delete Student
+          </button>
           <button class="button button-secondary" type="button" data-close-modal="studentModal">
             Cancel
           </button>
@@ -801,7 +839,7 @@
         <div class="modal-header">
           <div>
             <p class="eyebrow">Group</p>
-            <h3>Save Group</h3>
+            <h3 id="groupModalTitle">Save Group</h3>
           </div>
           <button class="icon-button" type="button" data-close-modal="groupModal">
             x
@@ -835,6 +873,9 @@
         </div>
         <div class="modal-actions">
           <button class="button button-primary" type="submit">Save Group</button>
+          <button class="button button-danger hidden" id="groupDeleteButton" type="button">
+            Delete Group
+          </button>
           <button class="button button-secondary" type="button" data-close-modal="groupModal">
             Cancel
           </button>
@@ -898,9 +939,17 @@
           <span>Notes</span>
           <textarea id="interventionNotesInput" rows="3"></textarea>
         </label>
+        <div class="field stack-sm">
+          <span>Evidence</span>
+          <div id="interventionEvidenceChecklist" class="quick-entry-evidence"></div>
+        </div>
         <label class="field">
-          <span>Evidence of Production</span>
-          <textarea id="interventionEvidenceInput" rows="3" required></textarea>
+          <span>Additional Evidence Details</span>
+          <textarea
+            id="interventionEvidenceInput"
+            rows="3"
+            placeholder="Optional additional evidence details"
+          ></textarea>
         </label>
         <section class="card stack-sm intervention-cap-card">
           <div class="section-title-row">

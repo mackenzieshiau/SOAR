@@ -1,4 +1,5 @@
 import { createRoot } from "react-dom/client";
+import packageData from "../package.json";
 
 import "../styles.css";
 import "./styles.css";
@@ -53,7 +54,13 @@ async function bootLegacyApp() {
     accessCode: "SOAR",
     ...(window.SOAR_CONFIG || {}),
   };
+  window.SOAR_APP_VERSION = packageData.version || "1.0.1";
   installFallbackTeacherLogin();
+
+  const homeVersion = document.getElementById("homeVersion");
+  if (homeVersion) {
+    homeVersion.textContent = `Version ${window.SOAR_APP_VERSION}`;
+  }
 
   await import("../app.js");
 }

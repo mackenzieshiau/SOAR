@@ -246,6 +246,28 @@ textarea {
   align-items: center;
 }
 
+.screen-version-footer {
+  display: flex;
+  justify-content: center;
+  padding: 6px 0 4px;
+}
+
+.screen-version-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 112px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.72);
+  color: var(--muted);
+  font-size: 0.84rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
 .card.stack-md,
 .filter-card,
 .quick-add-card,
@@ -265,6 +287,13 @@ textarea {
   align-items: end;
   justify-content: flex-end;
   gap: 12px;
+}
+
+.student-profile-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 16px;
 }
 
 .profile-status-field {
@@ -368,16 +397,27 @@ textarea {
   color: var(--text);
 }
 
+.button-danger {
+  background: #fff1f2;
+  border-color: #fecdd3;
+  color: var(--danger);
+}
+
 .button.is-active {
   background: var(--brand-soft);
   border-color: #bfd3eb;
   color: var(--brand-dark);
 }
 
+.button-danger:hover,
 .button-secondary:hover,
 .button-ghost:hover,
 .text-button:hover {
   background: #eef2f6;
+}
+
+.button-danger:hover {
+  background: #ffe4e6;
 }
 
 .button-ghost,
@@ -535,6 +575,8 @@ textarea {
   align-items: flex-start;
   text-align: left;
   line-height: 1.4;
+  position: relative;
+  padding-left: 14px;
 }
 
 .quick-entry-evidence-option span {
@@ -563,6 +605,7 @@ textarea {
   font-size: 0.88rem;
   border: 1px solid var(--border);
   background: var(--surface-soft);
+  cursor: pointer;
 }
 
 .inline-badge,
@@ -709,6 +752,52 @@ textarea {
 
 .check-chip input {
   accent-color: var(--brand);
+}
+
+.quick-entry-evidence-option input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.check-chip.is-selected,
+.quick-entry-evidence-option.is-selected,
+.check-chip:has(input:checked),
+.quick-entry-evidence-option:has(input:checked) {
+  border-color: #1d4ed8;
+  background: #2563eb;
+  color: #ffffff;
+  box-shadow: 0 8px 18px rgba(37, 99, 235, 0.25), inset 0 0 0 1px rgba(255, 255, 255, 0.18);
+}
+
+.check-chip.is-selected span,
+.quick-entry-evidence-option.is-selected span,
+.check-chip:has(input:checked) span,
+.quick-entry-evidence-option:has(input:checked) span {
+  color: inherit;
+}
+
+.check-chip.is-selected input,
+.quick-entry-evidence-option.is-selected input,
+.check-chip:has(input:checked) input,
+.quick-entry-evidence-option:has(input:checked) input {
+  accent-color: #ffffff;
+}
+
+.quick-entry-evidence-option.is-selected::before,
+.quick-entry-evidence-option:has(input:checked)::before {
+  content: "✓";
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.2);
+  color: #ffffff;
+  font-size: 0.82rem;
+  font-weight: 800;
+  flex: 0 0 auto;
 }
 
 .settings-grid {
@@ -909,6 +998,28 @@ code {
 
 .profile-config-form {
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  align-items: end;
+}
+
+.profile-app-management {
+  align-content: start;
+}
+
+.profile-other-app-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: end;
+}
+
+.profile-other-app-row .field {
+  flex: 1 1 220px;
+}
+
+.student-wida-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
   align-items: end;
 }
 

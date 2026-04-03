@@ -2,6 +2,7 @@ import { createDataService } from "./data-service.js";
 import {
   DEFAULT_GOOGLE_SHEET_URL,
   QUICK_LINK_ACTION_LIMIT,
+  buildInterventionEvidenceText,
   buildQuickAddEvidenceText,
   buildGoogleSheetSyncPayload,
   buildStudentSheetTabs,
@@ -11,11 +12,15 @@ import {
   normalizeSheetSyncConfig,
   normalizeStoredGroups,
   normalizeStoredQuickLinks,
+  pruneGroupsForDeletedStudent,
+  pruneQuickLinksForDeletedTargets,
 } from "./app-logic.js";
 
 const SESSION_KEY = "soar-tracker-session";
 const DEFAULT_ACCESS_CODE = "SOAR";
 const DEFAULT_ADMIN_USERNAME = "admin";
+const DEFAULT_TEACHER_USERNAME = "teacher";
+const DEFAULT_ADMIN_PASSWORD_HASH = "257b773f96c63d8e0387dd4935238b9ec8c441eeedc040bf1788ad44d8b62e9c";
 const DAILY_AVERAGE_GOAL_OPTIONS = [50, 60, 70, 80, 90, 100, 110, 120, 130, 140, 150];
 const DAILY_AVERAGE_GOAL_BANDS = [
   { value: "all", label: "All Goals" },
@@ -111,6 +116,45 @@ const QUICK_ADD_APP_PREFERENCES = {
   "focus group": ["Focus Group"],
   other: ["Other"],
 };
+const PROFILE_APP_ENROLLMENT_SECTIONS = [
+  {
+    contentAreaId: "ca-reading",
+    title: "Reading",
+    options: [
+      { key: "amplify", label: "Amplify", aliases: ["Amplify"] },
+      { key: "alpharead", label: "AlphaRead", aliases: ["AlphaRead", "Alpha Read"] },
+      { key: "alphaphonics", label: "AlphaPhonics", aliases: ["AlphaPhonics", "Alpha Phonics"] },
+      { key: "lexia", label: "Lexia", aliases: ["Lexia"] },
+      { key: "mentava", label: "Mentava", aliases: ["Mentava"] },
+    ],
+  },
+  {
+    contentAreaId: "ca-language",
+    title: "Language",
+    options: [{ key: "lalilo", label: "Lalilo", aliases: ["Lalilo"] }],
+  },
+  {
+    contentAreaId: "ca-fast-math",
+    title: "Fast Math",
+    options: [{ key: "fast-math", label: "Fast Math", aliases: ["Fast Math"] }],
+  },
+  {
+    contentAreaId: "ca-math",
+    title: "Math",
+    options: [
+      { key: "zearn", label: "Zearn", aliases: ["Zearn"] },
+      { key: "freckle", label: "Freckle", aliases: ["Freckle"] },
+      { key: "timeback", label: "Timeback", aliases: ["Timeback"] },
+    ],
+  },
+  {
+    contentAreaId: "ca-other",
+    title: "Other",
+    options: [],
+    allowCustom: true,
+    customPlaceholder: "Type app name",
+  },
+];
 const QUICK_ADD_INTERVENTION_CAP_KEYS = {
   "Math Vocabulary": "mathVocabulary",
   Comprehension: "mathVocabulary",
@@ -229,6 +273,7 @@ const state = {
     apps: [],
     studentAppAssignments: [],
     interventions: [],
+    widaLogs: [],
     groups: [],
     quickLinks: [],
     guideUsers: [],
@@ -250,11 +295,14 @@ const state = {
   selectedStudentId: null,
   assignmentStudentId: null,
   rosterTab: { type: "all", id: "" },
+  studentProfileTab: "profile",
   selectedWeekStart: getStartOfWeek(new Date()),
   activeScreen: "home",
   quickAdd: createQuickAddState(),
   groupDraft: createGroupDraft(),
   quickLinkDraft: createQuickLinkDraft(),
+  interventionEvidenceSelections: [],
+  interventionEvidenceDetails: "",
   resumeQuickLinkModalAfterGroupSave: false,
   session: null,
 };
@@ -264,7 +312,8 @@ const dom = {
   appRoot: document.querySelector("#appRoot"),
   configBanner: document.querySelector("#configBanner"),
   loginForm: document.querySelector("#loginForm"),
-  accessCodeInput: document.querySelector("#accessCodeInput"),
+  teacherUsernameInput: document.querySelector("#teacherUsernameInput"),
+  teacherPasswordInput: document.querySelector("#teacherPasswordInput"),
   loginStatus: document.querySelector("#loginStatus"),
   staffLoginForm: document.querySelector("#staffLoginForm"),
   staffUsernameInput: document.querySelector("#staffUsernameInput"),
@@ -319,17 +368,26 @@ const dom = {
   studentProfileSummary: document.querySelector("#studentProfileSummary"),
   studentStatusSelect: document.querySelector("#studentStatusSelect"),
   studentStatusMessage: document.querySelector("#studentStatusMessage"),
+  studentProfileTabs: document.querySelector("#studentProfileTabs"),
+  studentProfileDetailsSection: document.querySelector("#studentProfileDetailsSection"),
+  studentInterventionSection: document.querySelector("#studentInterventionSection"),
   studentOverviewCard: document.querySelector("#studentOverviewCard"),
   studentGroupPanel: document.querySelector("#studentGroupPanel"),
+  studentWidaPanel: document.querySelector("#studentWidaPanel"),
   openAddInterventionButton: document.querySelector("#openAddInterventionButton"),
+  openAddStudentFromProfileButton: document.querySelector("#openAddStudentFromProfileButton"),
   previousWeekButton: document.querySelector("#previousWeekButton"),
   nextWeekButton: document.querySelector("#nextWeekButton"),
   weekRangeLabel: document.querySelector("#weekRangeLabel"),
   dailyAccordion: document.querySelector("#dailyAccordion"),
   studentModal: document.querySelector("#studentModal"),
   studentForm: document.querySelector("#studentForm"),
+  studentModalTitle: document.querySelector("#studentModalTitle"),
+  studentDeleteButton: document.querySelector("#studentDeleteButton"),
   groupModal: document.querySelector("#groupModal"),
   groupForm: document.querySelector("#groupForm"),
+  groupModalTitle: document.querySelector("#groupModalTitle"),
+  groupDeleteButton: document.querySelector("#groupDeleteButton"),
   groupIdInput: document.querySelector("#groupIdInput"),
   groupNameInput: document.querySelector("#groupNameInput"),
   groupStudentSearchInput: document.querySelector("#groupStudentSearchInput"),
@@ -339,6 +397,8 @@ const dom = {
   groupNotesInput: document.querySelector("#groupNotesInput"),
   studentIdInput: document.querySelector("#studentIdInput"),
   studentNameInput: document.querySelector("#studentNameInput"),
+  studentSchoolYearInput: document.querySelector("#studentSchoolYearInput"),
+  studentClassCodeInput: document.querySelector("#studentClassCodeInput"),
   studentBandInput: document.querySelector("#studentBandInput"),
   studentGradeBandInput: document.querySelector("#studentGradeBandInput"),
   studentWidaInput: document.querySelector("#studentWidaInput"),
@@ -368,6 +428,7 @@ const dom = {
   interventionTaskDetailInput: document.querySelector("#interventionTaskDetailInput"),
   interventionXpInput: document.querySelector("#interventionXpInput"),
   interventionNotesInput: document.querySelector("#interventionNotesInput"),
+  interventionEvidenceChecklist: document.querySelector("#interventionEvidenceChecklist"),
   interventionEvidenceInput: document.querySelector("#interventionEvidenceInput"),
   interventionCapSummary: document.querySelector("#interventionCapSummary"),
   interventionCapWarning: document.querySelector("#interventionCapWarning"),
@@ -479,8 +540,9 @@ function bindEvents() {
   dom.exportButton.addEventListener("click", () => switchScreen("export"));
   dom.logoutButton.addEventListener("click", handleLogout);
   dom.openSettingsFromQuickAddButton.addEventListener("click", () => switchScreen("settings"));
-  dom.openAddStudentButton.addEventListener("click", openStudentModal);
-  dom.openAddGroupButton.addEventListener("click", openGroupModal);
+dom.openAddStudentButton.addEventListener("click", openStudentModal);
+dom.openAddStudentFromProfileButton.addEventListener("click", openStudentModal);
+dom.openAddGroupButton.addEventListener("click", openGroupModal);
   dom.openQuickLinkButton.addEventListener("click", openQuickLinkModal);
   dom.quickAddTeacherSelect.addEventListener("change", handleQuickAddTeacherChange);
   dom.quickAddTeacherOtherInput.addEventListener("input", (event) => {
@@ -530,9 +592,12 @@ function bindEvents() {
   dom.studentGrid.addEventListener("click", handleStudentGridClick);
   dom.backToHomeButton.addEventListener("click", () => switchScreen("students"));
   dom.studentStatusSelect.addEventListener("change", handleStudentStatusChange);
+  dom.studentProfileTabs.addEventListener("click", handleStudentProfileTabClick);
   dom.studentOverviewCard.addEventListener("submit", handleStudentProfileConfigSubmit);
+  dom.studentOverviewCard.addEventListener("change", handleStudentOverviewChange);
   dom.studentOverviewCard.addEventListener("click", handleStudentOverviewClick);
   dom.studentGroupPanel.addEventListener("click", handleStudentGroupPanelClick);
+  dom.studentWidaPanel.addEventListener("submit", handleStudentWidaSubmit);
   dom.dailyAccordion.addEventListener("click", handleDailyAccordionClick);
   dom.openAddInterventionButton.addEventListener("click", openInterventionModalForSelectedStudent);
   dom.previousWeekButton.addEventListener("click", () => {
@@ -545,8 +610,10 @@ function bindEvents() {
     renderStudentProfile();
     syncExportDefaults();
   });
-  dom.studentForm.addEventListener("submit", handleStudentSubmit);
-  dom.groupForm.addEventListener("submit", handleGroupSubmit);
+dom.studentForm.addEventListener("submit", handleStudentSubmit);
+dom.studentDeleteButton.addEventListener("click", handleStudentDeleteClick);
+dom.groupForm.addEventListener("submit", handleGroupSubmit);
+dom.groupDeleteButton.addEventListener("click", handleGroupDeleteClick);
   dom.groupNameInput.addEventListener("input", (event) => {
     state.groupDraft.name = event.target.value;
   });
@@ -574,7 +641,10 @@ function bindEvents() {
   dom.interventionDateInput.addEventListener("change", updateInterventionCapSummary);
   dom.interventionContentAreaInput.addEventListener("change", updateInterventionCapSummary);
   dom.interventionXpInput.addEventListener("input", updateInterventionCapSummary);
+  dom.interventionCategoryInput.addEventListener("input", syncInterventionEvidenceChecklist);
   dom.interventionCategoryInput.addEventListener("input", updateInterventionCapSummary);
+  dom.interventionEvidenceChecklist.addEventListener("change", handleInterventionEvidenceChecklistChange);
+  dom.interventionEvidenceInput.addEventListener("input", handleInterventionEvidenceInput);
   dom.interventionOverrideNoteInput.addEventListener("input", updateInterventionCapSummary);
   dom.interventionRepeatedInput.addEventListener("change", syncNewContextField);
   dom.adminPasswordForm.addEventListener("submit", handleAdminPasswordSubmit);
@@ -611,15 +681,26 @@ function bindEvents() {
 
 async function handleLogin(event) {
   event.preventDefault();
-  const submittedCode = dom.accessCodeInput.value.trim().toUpperCase();
-  const expectedCode = getTeacherAccessCode().trim().toUpperCase();
+  const username = normalizeUsername(dom.teacherUsernameInput.value);
+  const password = dom.teacherPasswordInput.value;
 
-  if (submittedCode !== expectedCode) {
-    setStatus(dom.loginStatus, "Incorrect access code. Please try again.", "error");
+  if (!username || !password) {
+    setStatus(dom.loginStatus, "Enter a username and password.", "error");
     return;
   }
 
-  state.session = createSession("teacher", "Teacher Access");
+  await refreshData();
+  const passwordHash = await hashValue(password);
+  const teacher = getGuideByUsername(username);
+  if (!teacher || !teacher.active || teacher.passwordHash !== passwordHash) {
+    setStatus(dom.loginStatus, "Incorrect username or password.", "error");
+    return;
+  }
+
+  state.session = createSession("teacher", teacher.username, {
+    username: teacher.username,
+    guideId: teacher.id,
+  });
   await unlockApp();
 }
 
@@ -634,32 +715,21 @@ async function handleStaffLogin(event) {
     return;
   }
 
+  await refreshData();
   const passwordHash = await hashValue(password);
-  if (
-    username === DEFAULT_ADMIN_USERNAME &&
-    passwordHash === getAdminPasswordHash()
-  ) {
+  if (username === DEFAULT_ADMIN_USERNAME && passwordHash === getAdminPasswordHash()) {
     state.session = createSession("admin", "Admin", { username: DEFAULT_ADMIN_USERNAME });
     await unlockApp();
     return;
   }
 
-  const guide = getGuideByUsername(username);
-  if (!guide || !guide.active || guide.passwordHash !== passwordHash) {
-    setStatus(dom.staffLoginStatus, "Incorrect username or password.", "error");
-    return;
-  }
-
-  state.session = createSession("guide", guide.username, {
-    username: guide.username,
-    guideId: guide.id,
-  });
-  await unlockApp();
+  setStatus(dom.staffLoginStatus, "Incorrect admin username or password.", "error");
 }
 
 async function unlockApp({ persistSession = true, preferredScreen = null } = {}) {
   dom.loginStatus.textContent = "";
-  dom.accessCodeInput.value = "";
+  dom.teacherUsernameInput.value = "";
+  dom.teacherPasswordInput.value = "";
   dom.staffLoginStatus.textContent = "";
   dom.staffUsernameInput.value = "";
   dom.staffPasswordInput.value = "";
@@ -919,7 +989,7 @@ function renderQuickAdd() {
     ? `${selectionCount} students from ${group.name}`
     : `${selectionCount} student${selectionCount === 1 ? "" : "s"} selected`;
   const teacherOptions = [
-    ...QUICK_ADD_TEACHER_OPTIONS.map((teacherName) => ({
+    ...getQuickAddTeacherChoices().map((teacherName) => ({
       value: teacherName,
       label: teacherName,
     })),
@@ -1127,7 +1197,7 @@ function renderQuickAddStudentRows() {
                             ${evidenceTemplate.options
                               .map(
                                 (option) => `
-                                  <label class="check-chip quick-entry-evidence-option">
+                                  <label class="check-chip quick-entry-evidence-option ${entry.evidenceSelections.includes(option) ? "is-selected" : ""}">
                                     <input
                                       type="checkbox"
                                       data-student-id="${escapeHtml(student.id)}"
@@ -1285,6 +1355,245 @@ function renderStudentGroupPanel(student) {
     : `<div class="empty-state">No student selected.</div>`;
 }
 
+function getStudentWidaLogs(studentId) {
+  return [...state.data.widaLogs]
+    .filter((entry) => entry.studentId === studentId)
+    .sort((left, right) => {
+      if (left.date !== right.date) {
+        return right.date.localeCompare(left.date);
+      }
+      return new Date(right.createdAt) - new Date(left.createdAt);
+    });
+}
+
+function syncStudentProfileTabUi() {
+  const isProfile = state.studentProfileTab !== "log";
+  dom.studentProfileDetailsSection.classList.toggle("hidden", !isProfile);
+  dom.studentInterventionSection.classList.toggle("hidden", isProfile);
+  dom.studentProfileTabs.querySelectorAll("[data-student-tab]").forEach((button) => {
+    button.classList.toggle(
+      "is-active",
+      button.getAttribute("data-student-tab") === state.studentProfileTab,
+    );
+  });
+}
+
+function renderStudentWidaPanel(student) {
+  const entries = student ? getStudentWidaLogs(student.id) : [];
+  dom.studentWidaPanel.innerHTML = student
+    ? `
+        <div class="section-title-row">
+          <div>
+            <p class="eyebrow">WIDA Running Record</p>
+            <h3>Levels and domain notes</h3>
+            <p class="muted">Track dated WIDA entries with domain, level, justification, and notes.</p>
+          </div>
+        </div>
+        <form class="inline-form student-wida-form">
+          <input type="hidden" name="studentId" value="${escapeHtml(student.id)}" />
+          <label class="field small-field">
+            <span>Date</span>
+            <input type="date" name="date" value="${escapeHtml(toIsoDate(new Date()))}" required />
+          </label>
+          <label class="field">
+            <span>Domain</span>
+            <input
+              name="domain"
+              list="widaDomainOptions"
+              placeholder="Reading, Writing, Listening, Speaking, Composite"
+              required
+            />
+          </label>
+          <label class="field small-field">
+            <span>WIDA Level</span>
+            <input name="level" placeholder="e.g. 2.5" required />
+          </label>
+          <label class="field">
+            <span>Justification</span>
+            <textarea name="justification" rows="2" required></textarea>
+          </label>
+          <label class="field">
+            <span>Notes</span>
+            <textarea name="notes" rows="2"></textarea>
+          </label>
+          <button class="button button-primary" type="submit">Add WIDA Entry</button>
+        </form>
+        <datalist id="widaDomainOptions">
+          <option value="Reading"></option>
+          <option value="Writing"></option>
+          <option value="Listening"></option>
+          <option value="Speaking"></option>
+          <option value="Composite"></option>
+        </datalist>
+        ${
+          entries.length
+            ? `<div class="stack-sm">${entries
+                .map(
+                  (entry) => `
+                    <article class="assignment-card stack-sm">
+                      <div class="assignment-row">
+                        <div>
+                          <h4>${escapeHtml(entry.domain)} | Level ${escapeHtml(entry.level)}</h4>
+                          <p class="muted">${escapeHtml(formatShortDate(entry.date))}</p>
+                        </div>
+                      </div>
+                      <div class="record-grid">
+                        <div>
+                          <strong>Justification</strong>
+                          <p>${escapeHtml(entry.justification || "No justification")}</p>
+                        </div>
+                        <div>
+                          <strong>Notes</strong>
+                          <p>${escapeHtml(entry.notes || "No notes")}</p>
+                        </div>
+                      </div>
+                    </article>
+                  `,
+                )
+                .join("")}</div>`
+            : `<div class="empty-state">No WIDA running-record entries yet.</div>`
+        }
+      `
+    : `<div class="empty-state">No student selected.</div>`;
+}
+
+function findProfileEnrollmentCatalogApp(contentAreaId, aliases = []) {
+  const aliasSet = new Set(aliases.map((value) => normalizeLabel(value)));
+  return (
+    state.data.apps.find(
+      (app) =>
+        app.contentAreaId === contentAreaId
+        && aliasSet.has(normalizeLabel(app.name)),
+    ) || null
+  );
+}
+
+function getProfileEnrollmentSections(studentId) {
+  const activeAssignments = new Set(
+    getAssignmentsForStudent(studentId)
+      .filter((assignment) => assignment.active)
+      .map((assignment) => assignment.appId),
+  );
+
+  return PROFILE_APP_ENROLLMENT_SECTIONS.map((section) => {
+    const matchedAppIds = new Set();
+    const options = section.options.map((option) => {
+      const app = findProfileEnrollmentCatalogApp(section.contentAreaId, option.aliases);
+      if (app) {
+        matchedAppIds.add(app.id);
+      }
+      return {
+        ...option,
+        appId: app?.id || "",
+        assigned: app ? activeAssignments.has(app.id) : false,
+        isExtra: false,
+      };
+    });
+
+    const extraAssignedApps = state.data.apps
+      .filter(
+        (app) =>
+          app.contentAreaId === section.contentAreaId
+          && activeAssignments.has(app.id)
+          && !matchedAppIds.has(app.id),
+      )
+      .sort((left, right) => left.name.localeCompare(right.name))
+      .map((app) => ({
+        key: `extra-${app.id}`,
+        label: app.name,
+        aliases: [app.name],
+        appId: app.id,
+        assigned: true,
+        isExtra: true,
+      }));
+
+    return {
+      ...section,
+      options: [...options, ...extraAssignedApps],
+    };
+  });
+}
+
+function renderProfileEnrollmentOption(studentId, section, option) {
+  return `
+    <label class="check-chip ${option.assigned ? "is-selected" : ""}">
+      <input
+        type="checkbox"
+        data-action="toggle-profile-app"
+        data-student-id="${escapeHtml(studentId)}"
+        data-content-area-id="${escapeHtml(section.contentAreaId)}"
+        data-app-id="${escapeHtml(option.appId || "")}"
+        data-app-label="${escapeHtml(option.label)}"
+        data-app-aliases="${escapeHtml(option.aliases.join("|"))}"
+        ${option.assigned ? "checked" : ""}
+      />
+      <span>${escapeHtml(option.label)}</span>
+    </label>
+  `;
+}
+
+function renderStudentProfileAppManager(studentId) {
+  const sections = getProfileEnrollmentSections(studentId);
+
+  return `
+    <div class="section-block profile-app-management">
+      <div>
+        <p class="eyebrow">Assigned Apps</p>
+        <h3>Enrollment</h3>
+        <p class="muted">Select the apps this student is enrolled in for each content area.</p>
+      </div>
+      ${sections
+        .map((section) => {
+          const selectedCount = section.options.filter((option) => option.assigned).length;
+          return `
+            <article class="assignment-card stack-sm">
+              <div class="assignment-row">
+                <div>
+                  <h4>${escapeHtml(section.title)}</h4>
+                  <p class="muted">${selectedCount} selected</p>
+                </div>
+              </div>
+              ${
+                section.options.length
+                  ? `<div class="assignment-apps">${section.options
+                      .map((option) => renderProfileEnrollmentOption(studentId, section, option))
+                      .join("")}</div>`
+                  : `<p class="muted">No apps assigned yet.</p>`
+              }
+              ${
+                section.allowCustom
+                  ? `
+                    <div class="profile-other-app-row">
+                      <label class="field">
+                        <span>Add Other App</span>
+                        <input
+                          id="studentProfileOtherAppInput"
+                          data-student-id="${escapeHtml(studentId)}"
+                          placeholder="${escapeHtml(section.customPlaceholder || "Type app name")}"
+                        />
+                      </label>
+                      <button
+                        class="button button-secondary"
+                        type="button"
+                        data-action="add-profile-other-app"
+                        data-student-id="${escapeHtml(studentId)}"
+                        data-content-area-id="${escapeHtml(section.contentAreaId)}"
+                      >
+                        Add Other App
+                      </button>
+                    </div>
+                    <p class="field-note">Other apps are saved only for this student under the Other content area.</p>
+                  `
+                  : ""
+              }
+            </article>
+          `;
+        })
+        .join("")}
+    </div>
+  `;
+}
+
 function legacyRenderStudentProfile1() {
   const student = getStudentById(state.selectedStudentId);
   if (!student) {
@@ -1299,20 +1608,10 @@ function legacyRenderStudentProfile1() {
     return;
   }
 
-  const activeAssignments = getAssignmentsForStudent(student.id).filter((item) => item.active);
   const appMap = new Map(state.data.apps.map((app) => [app.id, app]));
   const contentAreaMap = new Map(
     state.data.contentAreas.map((contentArea) => [contentArea.id, contentArea]),
   );
-  const groupedApps = state.data.contentAreas
-    .filter((contentArea) => contentArea.active)
-    .map((contentArea) => ({
-      contentArea,
-      apps: activeAssignments
-        .map((assignment) => appMap.get(assignment.appId))
-        .filter((app) => app && app.contentAreaId === contentArea.id && app.active),
-    }))
-    .filter((group) => group.apps.length > 0);
   const studentRecords = getStudentInterventions(student.id);
 
   const currentWeekStart = getStartOfWeek(new Date());
@@ -1350,27 +1649,7 @@ function legacyRenderStudentProfile1() {
         </div>
       </div>
       <div class="stack-sm">
-        <div class="section-block">
-          <p class="eyebrow">Assigned Apps</p>
-          ${
-            groupedApps.length
-              ? groupedApps
-                  .map(
-                    (group) => `
-                  <div class="assigned-app-group stack-sm">
-                    <strong class="assigned-app-group-title">${escapeHtml(group.contentArea.name)}</strong>
-                    <div class="app-pill-row">
-                      ${group.apps
-                        .map((app) => `<span class="app-pill">${escapeHtml(app.name)}</span>`)
-                        .join("")}
-                    </div>
-                  </div>
-                `,
-                  )
-                  .join("")
-              : `<p class="muted">No apps assigned yet.</p>`
-          }
-        </div>
+        ${renderStudentProfileAppManager(student.id)}
       </div>
     </div>
   `;
@@ -2829,7 +3108,7 @@ function renderGuideList() {
                 <div>
                   <h4>${escapeHtml(guide.username)}</h4>
                   <p class="muted">
-                    ${guide.active ? "Active" : "Inactive"} guide login
+                    ${guide.active ? "Active" : "Inactive"} teacher login
                   </p>
                 </div>
                 <div class="record-toolbar">
@@ -2856,7 +3135,7 @@ function renderGuideList() {
           `,
         )
         .join("")
-    : `<div class="empty-state">No guide logins have been created yet.</div>`;
+    : `<div class="empty-state">No teacher logins have been created yet.</div>`;
 }
 
 async function handleAdminPasswordSubmit(event) {
@@ -2895,7 +3174,7 @@ async function handleGuideSubmit(event) {
   event.preventDefault();
 
   if (!isAdminSession()) {
-    setStatus(dom.guideStatus, "Only admins can manage guide logins.", "error");
+    setStatus(dom.guideStatus, "Only admins can manage teacher logins.", "error");
     return;
   }
 
@@ -2904,17 +3183,17 @@ async function handleGuideSubmit(event) {
   const existingGuide = state.data.guideUsers.find((guide) => guide.id === dom.guideIdInput.value);
 
   if (!username) {
-    setStatus(dom.guideStatus, "Guide usernames can only use letters, numbers, dots, dashes, and underscores.", "error");
+    setStatus(dom.guideStatus, "Teacher usernames can only use letters, numbers, dots, dashes, and underscores.", "error");
     return;
   }
 
   if (!existingGuide && password.length < 4) {
-    setStatus(dom.guideStatus, "New guide accounts need a password with at least 4 characters.", "error");
+    setStatus(dom.guideStatus, "New teacher accounts need a password with at least 4 characters.", "error");
     return;
   }
 
   if (existingGuide && password && password.length < 4) {
-    setStatus(dom.guideStatus, "Guide passwords need at least 4 characters.", "error");
+    setStatus(dom.guideStatus, "Teacher passwords need at least 4 characters.", "error");
     return;
   }
 
@@ -2927,7 +3206,7 @@ async function handleGuideSubmit(event) {
     });
     resetGuideForm();
     await refreshData();
-    setStatus(dom.guideStatus, "Guide login saved.", "success");
+    setStatus(dom.guideStatus, "Teacher login saved.", "success");
   } catch (error) {
     console.error(error);
     setStatus(dom.guideStatus, readableError(error), "error");
@@ -2959,7 +3238,7 @@ async function handleGuideListClick(event) {
     dom.guidePasswordInput.value = "";
     dom.guideActiveInput.checked = guide.active;
     dom.guidePasswordInput.required = false;
-    setStatus(dom.guideStatus, "Update the fields, then save the guide.", "neutral");
+    setStatus(dom.guideStatus, "Update the fields, then save the teacher login.", "neutral");
     return;
   }
 
@@ -2972,7 +3251,7 @@ async function handleGuideListClick(event) {
       await refreshData();
       setStatus(
         dom.guideStatus,
-        `${guide.username} has been ${guide.active ? "deactivated" : "activated"}.`,
+        `${guide.username} has been ${guide.active ? "deactivated" : "activated"} as a teacher login.`,
         "success",
       );
     } catch (error) {
@@ -3180,16 +3459,132 @@ function handleStudentGridClick(event) {
   }
 
   state.selectedStudentId = studentId;
+  state.studentProfileTab = "profile";
   state.selectedWeekStart = getStartOfWeek(new Date());
   renderStudentProfile();
   syncExportDefaults();
   switchScreen("student");
 }
 
-function handleStudentOverviewClick(event) {
+function handleStudentProfileTabClick(event) {
+  const button = event.target.closest("[data-student-tab]");
+  if (!button) {
+    return;
+  }
+  state.studentProfileTab = button.getAttribute("data-student-tab") === "log" ? "log" : "profile";
+  syncStudentProfileTabUi();
+}
+
+async function handleStudentOverviewChange(event) {
+  const checkbox = event.target.closest("input[type='checkbox'][data-action='toggle-profile-app']");
+  if (!checkbox) {
+    return;
+  }
+
+  const studentId = checkbox.getAttribute("data-student-id") || "";
+  const contentAreaId = checkbox.getAttribute("data-content-area-id") || "";
+  const appId = checkbox.getAttribute("data-app-id") || "";
+  const appLabel = checkbox.getAttribute("data-app-label") || "";
+  const aliases = String(checkbox.getAttribute("data-app-aliases") || "")
+    .split("|")
+    .map((value) => value.trim())
+    .filter(Boolean);
+
+  setStatus(dom.studentStatusMessage, "Saving app enrollment...", "neutral");
+  try {
+    await saveStudentProfileAppAssignment({
+      studentId,
+      contentAreaId,
+      appId,
+      appLabel,
+      aliases,
+      active: checkbox.checked,
+    });
+    await refreshData();
+    renderStudentProfile();
+    setStatus(dom.studentStatusMessage, "App enrollment updated.", "success");
+  } catch (error) {
+    console.error(error);
+    await refreshData();
+    renderStudentProfile();
+    setStatus(dom.studentStatusMessage, readableError(error), "error");
+  }
+}
+
+async function handleStudentOverviewClick(event) {
+  const deleteButton = event.target.closest("[data-action='delete-student']");
+  if (deleteButton) {
+    await deleteStudentAndReferences(deleteButton.getAttribute("data-student-id"));
+    return;
+  }
+  const addOtherAppButton = event.target.closest("[data-action='add-profile-other-app']");
+  if (addOtherAppButton) {
+    const input = dom.studentOverviewCard.querySelector("#studentProfileOtherAppInput");
+    const appName = String(input?.value || "").trim();
+    if (!appName) {
+      setStatus(dom.studentStatusMessage, "Enter an app name before adding it.", "error");
+      input?.focus();
+      return;
+    }
+
+    setStatus(dom.studentStatusMessage, "Saving app enrollment...", "neutral");
+    try {
+      await saveStudentProfileAppAssignment({
+        studentId: addOtherAppButton.getAttribute("data-student-id") || "",
+        contentAreaId: addOtherAppButton.getAttribute("data-content-area-id") || "ca-other",
+        appId: "",
+        appLabel: appName,
+        aliases: [appName],
+        active: true,
+      });
+      await refreshData();
+      renderStudentProfile();
+      setStatus(dom.studentStatusMessage, "App enrollment updated.", "success");
+    } catch (error) {
+      console.error(error);
+      await refreshData();
+      renderStudentProfile();
+      setStatus(dom.studentStatusMessage, readableError(error), "error");
+    }
+    return;
+  }
   const button = event.target.closest("[data-action='edit-group']");
   if (button) {
     openGroupModal(button.getAttribute("data-group-id"));
+  }
+}
+
+async function handleStudentWidaSubmit(event) {
+  event.preventDefault();
+  const form = new FormData(event.target);
+  const studentId = String(form.get("studentId") || "").trim();
+  const date = String(form.get("date") || "").trim();
+  const domain = String(form.get("domain") || "").trim();
+  const level = String(form.get("level") || "").trim();
+  const justification = String(form.get("justification") || "").trim();
+  const notes = String(form.get("notes") || "").trim();
+
+  if (!studentId || !date || !domain || !level || !justification) {
+    setStatus(dom.studentStatusMessage, "Complete the WIDA date, domain, level, and justification fields.", "error");
+    return;
+  }
+
+  setStatus(dom.studentStatusMessage, "Saving WIDA entry...", "neutral");
+  try {
+    await state.service.saveWidaLog({
+      studentId,
+      date,
+      domain,
+      level,
+      justification,
+      notes,
+    });
+    await refreshData();
+    renderStudentProfile();
+    setStatus(dom.studentStatusMessage, "WIDA running record updated.", "success");
+  } catch (error) {
+    console.error(error);
+    setStatus(dom.studentStatusMessage, readableError(error), "error");
   }
 }
 
@@ -3242,7 +3637,11 @@ async function handleStudentStatusChange() {
 function openStudentModal() {
   dom.studentForm.reset();
   dom.studentIdInput.value = "";
+  dom.studentModalTitle.textContent = "Add Student";
+  dom.studentDeleteButton.classList.add("hidden");
   dom.studentActiveInput.checked = true;
+  dom.studentSchoolYearInput.value = "";
+  dom.studentClassCodeInput.value = "";
   dom.studentBandInput.value = "K-2";
   dom.studentGradeBandInput.value = "Kindergarten";
   dom.studentWidaInput.value = "1";
@@ -3253,6 +3652,8 @@ function openStudentModal() {
 
 function openGroupModal(groupId = "", initialStudentId = "") {
   const group = getGroupById(groupId);
+  dom.groupModalTitle.textContent = group ? "Edit Group" : "Save Group";
+  dom.groupDeleteButton.classList.toggle("hidden", !group);
   state.groupDraft = group
     ? {
         id: group.id,
@@ -3346,6 +3747,8 @@ async function handleStudentSubmit(event) {
     const savedStudent = await state.service.saveStudent({
       id: dom.studentIdInput.value || undefined,
       name: dom.studentNameInput.value,
+      schoolYear: dom.studentSchoolYearInput.value,
+      classCode: dom.studentClassCodeInput.value,
       band: dom.studentBandInput.value,
       gradeBand: dom.studentGradeBandInput.value,
       widaLevel: dom.studentWidaInput.value,
@@ -3396,6 +3799,24 @@ async function handleGroupSubmit(event) {
     renderQuickLinkDraft();
     dom.quickLinkModal.showModal();
   }
+}
+
+async function handleStudentDeleteClick() {
+  const studentId = String(dom.studentIdInput.value || "").trim();
+  if (!studentId) {
+    return;
+  }
+  await deleteStudentAndReferences(studentId);
+  dom.studentModal.close();
+}
+
+async function handleGroupDeleteClick() {
+  const groupId = String(state.groupDraft.id || dom.groupIdInput.value || "").trim();
+  if (!groupId) {
+    return;
+  }
+  await deleteGroupAndReferences(groupId);
+  dom.groupModal.close();
 }
 
 function openQuickLinkModal(quickLinkId = "") {
@@ -3775,6 +4196,10 @@ function handleQuickAddStudentRowsInput(event) {
       ...current,
       evidenceSelections: [...evidenceSelections],
     };
+    event.target.closest(".quick-entry-evidence-option")?.classList.toggle(
+      "is-selected",
+      event.target.checked,
+    );
   } else {
     state.quickAdd.studentEntries[studentId] = {
       ...current,
@@ -3979,6 +4404,129 @@ function buildInterventionTimestamp(dateValue, existingTimestamp = "") {
   return date.toISOString();
 }
 
+function getInterventionEvidenceTemplate() {
+  return getQuickAddEvidenceTemplate(dom.interventionCategoryInput.value);
+}
+
+function deriveInterventionEvidenceSelections(evidenceText, templateOptions) {
+  const normalizedText = String(evidenceText || "").trim();
+  if (!normalizedText || !templateOptions.length) {
+    return [];
+  }
+
+  const parts = normalizedText
+    .split(";")
+    .map((value) => value.trim())
+    .filter(Boolean);
+  const optionSet = new Set(templateOptions);
+  return parts.filter((value) => optionSet.has(value));
+}
+
+function deriveInterventionEvidenceDetails(evidenceText, templateOptions) {
+  const normalizedText = String(evidenceText || "").trim();
+  if (!normalizedText) {
+    return "";
+  }
+
+  const parts = normalizedText
+    .split(";")
+    .map((value) => value.trim())
+    .filter(Boolean);
+  const optionSet = new Set(templateOptions);
+  return parts.filter((value) => !optionSet.has(value)).join("; ");
+}
+
+function syncInterventionEvidenceInputValue() {
+  const template = getInterventionEvidenceTemplate();
+  const validSelections = state.interventionEvidenceSelections.filter((value) =>
+    template.options.includes(value),
+  );
+  state.interventionEvidenceSelections = validSelections;
+  dom.interventionEvidenceInput.value = buildInterventionEvidenceText(
+    validSelections,
+    state.interventionEvidenceDetails,
+    dom.interventionNotesInput.value,
+    dom.interventionCategoryInput.value,
+  );
+}
+
+function renderInterventionEvidenceChecklist() {
+  const template = getInterventionEvidenceTemplate();
+  const validSelections = new Set(
+    state.interventionEvidenceSelections.filter((value) => template.options.includes(value)),
+  );
+  state.interventionEvidenceSelections = [...validSelections];
+
+  dom.interventionEvidenceChecklist.innerHTML = template.options.length
+    ? `
+        <span class="quick-entry-evidence-label">${escapeHtml(template.title || "Evidence")}</span>
+        <div class="quick-entry-evidence-options">
+          ${template.options
+            .map(
+              (option) => `
+                <label class="check-chip quick-entry-evidence-option ${validSelections.has(option) ? "is-selected" : ""}">
+                  <input
+                    type="checkbox"
+                    data-field="interventionEvidenceOption"
+                    data-evidence-value="${escapeHtml(option)}"
+                    ${validSelections.has(option) ? "checked" : ""}
+                  />
+                  <span>${escapeHtml(option)}</span>
+                </label>
+              `,
+            )
+            .join("")}
+        </div>
+        ${
+          template.caution
+            ? `<p class="field-note quick-entry-evidence-note">${escapeHtml(template.caution)}</p>`
+            : ""
+        }
+      `
+    : `<p class="field-note quick-entry-evidence-note">Choose an intervention to load the matching evidence checklist.</p>`;
+}
+
+function syncInterventionEvidenceChecklist() {
+  const existingSelections = [...dom.interventionEvidenceChecklist.querySelectorAll('[data-field="interventionEvidenceOption"]:checked')]
+    .map((input) => String(input.getAttribute("data-evidence-value") || "").trim())
+    .filter(Boolean);
+  if (existingSelections.length) {
+    state.interventionEvidenceSelections = existingSelections;
+  }
+  renderInterventionEvidenceChecklist();
+  syncInterventionEvidenceInputValue();
+}
+
+function handleInterventionEvidenceChecklistChange(event) {
+  const input = event.target.closest('[data-field="interventionEvidenceOption"]');
+  if (!input) {
+    return;
+  }
+
+  const evidenceValue = String(input.getAttribute("data-evidence-value") || "").trim();
+  if (!evidenceValue) {
+    return;
+  }
+
+  const nextSelections = new Set(state.interventionEvidenceSelections);
+  if (input.checked) {
+    nextSelections.add(evidenceValue);
+  } else {
+    nextSelections.delete(evidenceValue);
+  }
+  state.interventionEvidenceSelections = [...nextSelections];
+  input.closest(".quick-entry-evidence-option")?.classList.toggle("is-selected", input.checked);
+  syncInterventionEvidenceInputValue();
+}
+
+function handleInterventionEvidenceInput() {
+  const template = getInterventionEvidenceTemplate();
+  state.interventionEvidenceDetails = deriveInterventionEvidenceDetails(
+    dom.interventionEvidenceInput.value,
+    template.options,
+  );
+}
+
 function openInterventionModal(studentId = null, interventionId = "") {
   dom.interventionForm.reset();
   const record = state.data.interventions.find((item) => item.id === interventionId) || null;
@@ -3994,11 +4542,22 @@ function openInterventionModal(studentId = null, interventionId = "") {
   dom.interventionXpInput.value = record ? String(record.xpAwarded) : "";
   dom.interventionNotesInput.value = record?.notes || "";
   dom.interventionEvidenceInput.value = record?.evidenceOfProduction || "";
+  const templateOptions = getQuickAddEvidenceTemplate(record?.interventionCategory || "").options;
+  state.interventionEvidenceSelections = deriveInterventionEvidenceSelections(
+    record?.evidenceOfProduction || "",
+    templateOptions,
+  );
+  state.interventionEvidenceDetails = deriveInterventionEvidenceDetails(
+    record?.evidenceOfProduction || "",
+    templateOptions,
+  );
   dom.interventionNewContextInput.value = record?.newContextNote || "";
   if (record?.contentAreaId) {
     dom.interventionContentAreaInput.value = record.contentAreaId;
   }
   syncNewContextField();
+  renderInterventionEvidenceChecklist();
+  syncInterventionEvidenceInputValue();
   updateInterventionAppOptions();
   if (record?.appId) {
     dom.interventionAppInput.value = record.appId;
@@ -4074,7 +4633,12 @@ async function handleInterventionSubmit(event) {
       taskDetail: dom.interventionTaskDetailInput.value,
       xpAwarded: Number(dom.interventionXpInput.value),
       notes: dom.interventionNotesInput.value,
-      evidenceOfProduction: dom.interventionEvidenceInput.value,
+      evidenceOfProduction: buildInterventionEvidenceText(
+        state.interventionEvidenceSelections,
+        dom.interventionEvidenceInput.value,
+        dom.interventionNotesInput.value,
+        dom.interventionCategoryInput.value,
+      ),
       repeatedInNewContext: dom.interventionRepeatedInput.value === "true",
       newContextNote: dom.interventionNewContextInput.value,
       overrideNote: dom.interventionOverrideNoteInput.value.trim(),
@@ -4295,6 +4859,42 @@ async function handleAssignmentToggle(event) {
   }
 }
 
+async function saveStudentProfileAppAssignment({
+  studentId,
+  contentAreaId,
+  appId,
+  appLabel,
+  aliases,
+  active,
+}) {
+  if (!studentId || !contentAreaId || !appLabel) {
+    throw new Error("The app assignment is missing required student or app details.");
+  }
+
+  let app = appId ? getAppById(appId) : null;
+  if (!app) {
+    app = findProfileEnrollmentCatalogApp(contentAreaId, [appLabel, ...(aliases || [])]);
+  }
+
+  if (!app) {
+    if (!active) {
+      return;
+    }
+    app = await state.service.saveApp({
+      name: appLabel.trim(),
+      contentAreaId,
+      active: true,
+    });
+  } else if (!app.active) {
+    app = await state.service.saveApp({
+      ...app,
+      active: true,
+    });
+  }
+
+  await state.service.setStudentAppAssignment(studentId, app.id, active);
+}
+
 function syncExportDefaults() {
   const weekStart = toIsoDate(state.selectedWeekStart);
   const weekEnd = toIsoDate(addDays(state.selectedWeekStart, 6));
@@ -4370,7 +4970,7 @@ async function handleExportSubmit(event) {
       });
       setStatus(
         dom.exportStatus,
-        `${records.length} intervention record${records.length === 1 ? "" : "s"} synced to Google Sheet.${result?.message ? ` ${result.message}` : ""}`,
+        `${records.length} student record${records.length === 1 ? "" : "s"} synced to Google Sheet.${result?.message ? ` ${result.message}` : ""}`,
         "success",
       );
       return;
@@ -4445,17 +5045,79 @@ function buildExportSheetRecords({ studentId, startDate, endDate }) {
     state.data.contentAreas.map((contentArea) => [contentArea.id, contentArea]),
   );
   const appMap = new Map(state.data.apps.map((app) => [app.id, app]));
-
-  return [...state.data.interventions]
+  const interventionRecords = [...state.data.interventions]
     .filter((record) => !studentId || record.studentId === studentId)
     .filter((record) => isDateWithinRange(record.date, startDate, endDate))
-    .sort((left, right) => new Date(left.timestamp) - new Date(right.timestamp))
-    .map((record) => ({
-      ...record,
-      studentName: studentMap.get(record.studentId)?.name || "",
-      contentAreaName: contentAreaMap.get(record.contentAreaId)?.name || "",
-      appName: appMap.get(record.appId)?.name || "",
-    }));
+    .map((record) => {
+      const student = studentMap.get(record.studentId);
+      return {
+        id: record.id,
+        recordType: "Intervention",
+        studentId: record.studentId,
+        studentName: student?.name || "",
+        schoolYear: student?.schoolYear || "",
+        classCode: student?.classCode || "",
+        band: student?.band || "",
+        gradeBand: student?.gradeBand || "",
+        currentWidaLevel: student?.widaLevel || "",
+        date: record.date,
+        timestamp: record.timestamp,
+        teacherName: record.teacherName,
+        groupName: record.groupName || "",
+        contentAreaName: contentAreaMap.get(record.contentAreaId)?.name || "",
+        appName: appMap.get(record.appId)?.name || "",
+        interventionCategory: record.interventionCategory,
+        taskDetail: record.taskDetail,
+        xpAwarded: record.xpAwarded,
+        notes: record.notes || "",
+        evidenceOfProduction: record.evidenceOfProduction,
+        repeatedInNewContext: record.repeatedInNewContext,
+        newContextNote: record.newContextNote || "",
+        widaDomain: "",
+        widaEntryLevel: "",
+        widaJustification: "",
+        widaNotes: "",
+      };
+    });
+
+  const widaRecords = [...state.data.widaLogs]
+    .filter((entry) => !studentId || entry.studentId === studentId)
+    .filter((entry) => isDateWithinRange(entry.date, startDate, endDate))
+    .map((entry) => {
+      const student = studentMap.get(entry.studentId);
+      return {
+        id: entry.id,
+        recordType: "WIDA",
+        studentId: entry.studentId,
+        studentName: student?.name || "",
+        schoolYear: student?.schoolYear || "",
+        classCode: student?.classCode || "",
+        band: student?.band || "",
+        gradeBand: student?.gradeBand || "",
+        currentWidaLevel: student?.widaLevel || "",
+        date: entry.date,
+        timestamp: entry.createdAt,
+        teacherName: "",
+        groupName: "",
+        contentAreaName: "",
+        appName: "",
+        interventionCategory: "",
+        taskDetail: "",
+        xpAwarded: "",
+        notes: "",
+        evidenceOfProduction: "",
+        repeatedInNewContext: false,
+        newContextNote: "",
+        widaDomain: entry.domain,
+        widaEntryLevel: entry.level,
+        widaJustification: entry.justification || "",
+        widaNotes: entry.notes || "",
+      };
+    });
+
+  return [...interventionRecords, ...widaRecords].sort(
+    (left, right) => new Date(left.timestamp) - new Date(right.timestamp),
+  );
 }
 
 function buildExportRows({ studentId, startDate, endDate }) {
@@ -4465,12 +5127,15 @@ function buildExportRows({ studentId, startDate, endDate }) {
     endDate,
   })
     .map((record) => {
-      const student = getStudentById(record.studentId);
       return {
-        studentName: record.studentName || student?.name || "",
-        band: student?.band || "",
-        gradeBand: student?.gradeBand || "",
-        widaLevel: student?.widaLevel || "",
+        recordId: record.id,
+        recordType: record.recordType,
+        studentName: record.studentName,
+        band: record.band,
+        gradeBand: record.gradeBand,
+        currentWidaLevel: record.currentWidaLevel,
+        schoolYear: record.schoolYear,
+        classCode: record.classCode,
         date: record.date,
         timestamp: formatDateTime(record.timestamp),
         teacherName: record.teacherName,
@@ -4484,6 +5149,10 @@ function buildExportRows({ studentId, startDate, endDate }) {
         evidenceOfProduction: record.evidenceOfProduction,
         repeatedInNewContext: record.repeatedInNewContext ? "Yes" : "No",
         newContextNote: record.newContextNote || "",
+        widaDomain: record.widaDomain || "",
+        widaEntryLevel: record.widaEntryLevel || "",
+        widaJustification: record.widaJustification || "",
+        widaNotes: record.widaNotes || "",
       };
     });
 }
@@ -4493,7 +5162,7 @@ function syncSessionAfterDataLoad() {
     return;
   }
 
-  if (state.session.role === "guide") {
+  if (state.session.role === "guide" || state.session.role === "teacher") {
     const guide = state.data.guideUsers.find((item) => item.id === state.session.guideId)
       || getGuideByUsername(state.session.username);
 
@@ -4504,7 +5173,7 @@ function syncSessionAfterDataLoad() {
       return;
     }
 
-    state.session = createSession("guide", guide.username, {
+    state.session = createSession("teacher", guide.username, {
       username: guide.username,
       guideId: guide.id,
     });
@@ -4512,10 +5181,6 @@ function syncSessionAfterDataLoad() {
 
   if (state.session.role === "admin") {
     state.session = createSession("admin", "Admin", { username: DEFAULT_ADMIN_USERNAME });
-  }
-
-  if (state.session.role === "teacher") {
-    state.session = createSession("teacher", "Teacher Access");
   }
 }
 
@@ -4526,9 +5191,7 @@ function syncAppChrome() {
   dom.sessionChip.textContent = state.session
     ? state.session.role === "admin"
       ? "Admin"
-      : state.session.role === "guide"
-        ? `Guide: ${state.session.displayName}`
-        : "Teacher Access"
+      : `Teacher: ${state.session.displayName}`
     : "";
 
   dom.settingsButton.classList.toggle("hidden", !adminSession);
@@ -4562,13 +5225,17 @@ function isGuideSession() {
   return state.session?.role === "guide";
 }
 
+function isTeacherSession() {
+  return state.session?.role === "teacher";
+}
+
 function getTeacherAccessCode() {
   return String(config.accessCode || DEFAULT_ACCESS_CODE);
 }
 
 function getAdminPasswordHash() {
   return state.data.authSettings.adminPasswordHash
-    || "03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4";
+    || DEFAULT_ADMIN_PASSWORD_HASH;
 }
 
 function getGuideByUsername(username) {
@@ -4576,7 +5243,7 @@ function getGuideByUsername(username) {
 }
 
 function getDefaultTeacherName() {
-  if (isGuideSession()) {
+  if (isTeacherSession() || isGuideSession()) {
     return state.session.displayName;
   }
 
@@ -4584,7 +5251,16 @@ function getDefaultTeacherName() {
     return DEFAULT_ADMIN_USERNAME;
   }
 
-  return QUICK_ADD_TEACHER_OPTIONS[0] || "";
+  return DEFAULT_TEACHER_USERNAME;
+}
+
+function getQuickAddTeacherChoices() {
+  const choices = [...QUICK_ADD_TEACHER_OPTIONS];
+  const defaultTeacherName = getDefaultTeacherName();
+  if (defaultTeacherName && !choices.includes(defaultTeacherName)) {
+    choices.unshift(defaultTeacherName);
+  }
+  return choices;
 }
 
 function syncQuickAddTeacherDefault() {
@@ -4593,11 +5269,12 @@ function syncQuickAddTeacherDefault() {
     return;
   }
 
-  const defaultTeacherName = QUICK_ADD_TEACHER_OPTIONS[0] || getDefaultTeacherName();
-  if (!state.quickAdd.teacherOption || !QUICK_ADD_TEACHER_OPTIONS.includes(state.quickAdd.teacherOption)) {
+  const teacherChoices = getQuickAddTeacherChoices();
+  const defaultTeacherName = teacherChoices[0] || getDefaultTeacherName();
+  if (!state.quickAdd.teacherOption || !teacherChoices.includes(state.quickAdd.teacherOption)) {
     state.quickAdd.teacherOption = defaultTeacherName;
   }
-  if (!state.quickAdd.teacherName || QUICK_ADD_TEACHER_OPTIONS.includes(state.quickAdd.teacherName)) {
+  if (!state.quickAdd.teacherName || teacherChoices.includes(state.quickAdd.teacherName)) {
     state.quickAdd.teacherName = state.quickAdd.teacherOption;
   }
 }
@@ -4609,7 +5286,7 @@ function loadStoredSession() {
   }
 
   if (rawValue === "true") {
-    return createSession("teacher", "Teacher Access");
+    return null;
   }
 
   try {
@@ -4719,6 +5396,63 @@ async function saveGroups(groups) {
 
 async function saveQuickLinks(quickLinks) {
   await state.service.saveAppSetting(QUICK_LINKS_SETTING_KEY, JSON.stringify(quickLinks));
+}
+
+async function deleteStudentAndReferences(studentId) {
+  const student = getStudentById(studentId);
+  if (!student) {
+    return;
+  }
+  const confirmed = window.confirm(
+    `Delete ${student.name} and remove all of their interventions, assignments, and saved quick links?`,
+  );
+  if (!confirmed) {
+    return;
+  }
+
+  const { groups, removedGroupIds } = pruneGroupsForDeletedStudent(state.data.groups, studentId);
+  const quickLinks = pruneQuickLinksForDeletedTargets(state.data.quickLinks, {
+    studentIds: [studentId],
+    groupIds: removedGroupIds,
+  });
+
+  try {
+    await state.service.deleteStudent(studentId);
+    await saveGroups(groups);
+    await saveQuickLinks(quickLinks);
+    await refreshData();
+    switchScreen("students");
+  } catch (error) {
+    console.error(error);
+    window.alert(`Unable to delete student.\n\n${readableError(error)}`);
+  }
+}
+
+async function deleteGroupAndReferences(groupId) {
+  const group = getGroupById(groupId);
+  if (!group) {
+    return;
+  }
+  const confirmed = window.confirm(
+    `Delete the group "${group.name}"? Existing intervention history will stay, but saved quick links for this group will be removed.`,
+  );
+  if (!confirmed) {
+    return;
+  }
+
+  const groups = state.data.groups.filter((item) => item.id !== groupId);
+  const quickLinks = pruneQuickLinksForDeletedTargets(state.data.quickLinks, {
+    groupIds: [groupId],
+  });
+
+  try {
+    await saveGroups(groups);
+    await saveQuickLinks(quickLinks);
+    await refreshData();
+  } catch (error) {
+    console.error(error);
+    window.alert(`Unable to delete group.\n\n${readableError(error)}`);
+  }
 }
 
 function getStudentById(studentId) {
@@ -5246,6 +5980,34 @@ function formatDateTime(timestamp) {
   }).format(new Date(timestamp));
 }
 
+const EXPORT_ROW_HEADERS = [
+  "recordId",
+  "recordType",
+  "studentName",
+  "band",
+  "gradeBand",
+  "currentWidaLevel",
+  "schoolYear",
+  "classCode",
+  "date",
+  "timestamp",
+  "teacherName",
+  "groupName",
+  "contentArea",
+  "app",
+  "interventionCategory",
+  "taskDetail",
+  "xpAwarded",
+  "notes",
+  "evidenceOfProduction",
+  "repeatedInNewContext",
+  "newContextNote",
+  "widaDomain",
+  "widaEntryLevel",
+  "widaJustification",
+  "widaNotes",
+];
+
 function setStatus(node, message, tone) {
   node.textContent = message;
   node.style.color =
@@ -5277,25 +6039,7 @@ function cssEscape(value) {
 }
 
 function toCsv(rows) {
-  const headers = [
-    "studentName",
-    "band",
-    "gradeBand",
-    "widaLevel",
-    "date",
-    "timestamp",
-    "teacherName",
-    "groupName",
-    "contentArea",
-    "app",
-    "interventionCategory",
-    "taskDetail",
-    "xpAwarded",
-    "notes",
-    "evidenceOfProduction",
-    "repeatedInNewContext",
-    "newContextNote",
-  ];
+  const headers = EXPORT_ROW_HEADERS;
   const lines = [headers.join(",")];
   rows.forEach((row) => {
     lines.push(
@@ -5310,15 +6054,19 @@ function toCsv(rows) {
 function toExcelHtml(rows) {
   const headers = Object.keys(
     rows[0] || {
+      recordId: "",
+      recordType: "",
       studentName: "",
       band: "",
       gradeBand: "",
-      widaLevel: "",
-        date: "",
-        timestamp: "",
-        teacherName: "",
-        groupName: "",
-        contentArea: "",
+      currentWidaLevel: "",
+      schoolYear: "",
+      classCode: "",
+      date: "",
+      timestamp: "",
+      teacherName: "",
+      groupName: "",
+      contentArea: "",
       app: "",
       interventionCategory: "",
       taskDetail: "",
@@ -5327,6 +6075,10 @@ function toExcelHtml(rows) {
       evidenceOfProduction: "",
       repeatedInNewContext: "",
       newContextNote: "",
+      widaDomain: "",
+      widaEntryLevel: "",
+      widaJustification: "",
+      widaNotes: "",
     },
   );
 
@@ -5409,24 +6161,17 @@ function renderStudentProfile() {
     dom.studentStatusSelect.disabled = true;
     setStatus(dom.studentStatusMessage, "", "neutral");
     dom.studentOverviewCard.innerHTML = `<div class="empty-state">No student selected.</div>`;
+    renderStudentGroupPanel(null);
+    renderStudentWidaPanel(null);
+    syncStudentProfileTabUi();
     dom.dailyAccordion.innerHTML = "";
     return;
   }
 
-  const activeAssignments = getAssignmentsForStudent(student.id).filter((item) => item.active);
   const appMap = new Map(state.data.apps.map((app) => [app.id, app]));
   const contentAreaMap = new Map(
     state.data.contentAreas.map((contentArea) => [contentArea.id, contentArea]),
   );
-  const groupedApps = state.data.contentAreas
-    .filter((contentArea) => contentArea.active)
-    .map((contentArea) => ({
-      contentArea,
-      apps: activeAssignments
-        .map((assignment) => appMap.get(assignment.appId))
-        .filter((app) => app && app.contentAreaId === contentArea.id && app.active),
-    }))
-    .filter((group) => group.apps.length > 0);
   const studentRecords = getStudentInterventions(student.id);
 
   const currentWeekStart = getStartOfWeek(new Date());
@@ -5442,14 +6187,21 @@ function renderStudentProfile() {
   dom.studentStatusSelect.disabled = false;
   dom.studentStatusSelect.value = student.active ? "active" : "inactive";
   setStatus(dom.studentStatusMessage, "", "neutral");
-  dom.studentProfileSummary.textContent = `${student.band} | ${student.gradeBand} | WIDA ${student.widaLevel}`;
+  const summaryParts = [
+    student.band,
+    student.gradeBand,
+    `WIDA ${student.widaLevel}`,
+    student.schoolYear || "",
+    student.classCode ? `Code ${student.classCode}` : "",
+  ].filter(Boolean);
+  dom.studentProfileSummary.textContent = summaryParts.join(" | ");
   dom.studentOverviewCard.innerHTML = `
     <div class="overview-grid">
       <div class="stack-md">
         <div class="section-block">
           <p class="eyebrow">Student Details</p>
           <h3>${escapeHtml(student.name)}</h3>
-          <p class="muted">${escapeHtml(`${student.band} | ${student.gradeBand} | WIDA ${student.widaLevel}`)}</p>
+          <p class="muted">${escapeHtml(summaryParts.join(" | "))}</p>
         </div>
         <div class="profile-stats">
           <div class="metric-card metric-card-featured">
@@ -5464,6 +6216,24 @@ function renderStudentProfile() {
         ${renderCapSummaryMarkup(todaySnapshot)}
         <form class="profile-config-form">
           <input type="hidden" name="studentId" value="${escapeHtml(student.id)}" />
+          <label class="field small-field">
+            <span>School Year</span>
+            <input
+              type="text"
+              name="schoolYear"
+              value="${escapeHtml(student.schoolYear || "")}"
+              placeholder="2025-2026"
+            />
+          </label>
+          <label class="field small-field">
+            <span>Class Code</span>
+            <input
+              type="text"
+              name="classCode"
+              value="${escapeHtml(student.classCode || "")}"
+              placeholder="R101"
+            />
+          </label>
           <label class="field small-field">
             <span>SOAR/WIDA Level</span>
             <input
@@ -5488,35 +6258,25 @@ function renderStudentProfile() {
               ).join("")}
             </select>
           </label>
-          <button class="button button-secondary" type="submit">Save Cap Settings</button>
+          <button class="button button-secondary" type="submit">Save Profile Settings</button>
         </form>
+        <button
+          class="button button-danger"
+          type="button"
+          data-action="delete-student"
+          data-student-id="${escapeHtml(student.id)}"
+        >
+          Delete Student
+        </button>
       </div>
       <div class="stack-sm">
-        <div class="section-block">
-          <p class="eyebrow">Assigned Apps</p>
-          ${
-            groupedApps.length
-              ? groupedApps
-                  .map(
-                    (group) => `
-                  <div class="assigned-app-group stack-sm">
-                    <strong class="assigned-app-group-title">${escapeHtml(group.contentArea.name)}</strong>
-                    <div class="app-pill-row">
-                      ${group.apps
-                        .map((app) => `<span class="app-pill">${escapeHtml(app.name)}</span>`)
-                        .join("")}
-                    </div>
-                  </div>
-                `,
-                  )
-                  .join("")
-              : `<p class="muted">No apps assigned yet.</p>`
-          }
-        </div>
+        ${renderStudentProfileAppManager(student.id)}
       </div>
     </div>
   `;
   renderStudentGroupPanel(student);
+  renderStudentWidaPanel(student);
+  syncStudentProfileTabUi();
 
   dom.weekRangeLabel.textContent = formatDateRange(
     state.selectedWeekStart,
@@ -5580,6 +6340,8 @@ async function handleStudentProfileConfigSubmit(event) {
     return;
   }
 
+  const schoolYear = String(form.get("schoolYear") || "").trim();
+  const classCode = String(form.get("classCode") || "").trim();
   const allotmentLevel = Number.parseInt(String(form.get("allotmentLevel") || ""), 10);
   const dailyAverageXpGoal = Number.parseInt(String(form.get("dailyAverageXpGoal") || ""), 10);
 
@@ -5593,16 +6355,18 @@ async function handleStudentProfileConfigSubmit(event) {
     return;
   }
 
-  setStatus(dom.studentStatusMessage, "Saving cap settings...", "neutral");
+  setStatus(dom.studentStatusMessage, "Saving profile settings...", "neutral");
   try {
     await state.service.saveStudent({
       ...student,
+      schoolYear,
+      classCode,
       allotmentLevel,
       dailyAverageXpGoal,
     });
     await refreshData();
     renderStudentProfile();
-    setStatus(dom.studentStatusMessage, "Cap settings saved.", "success");
+    setStatus(dom.studentStatusMessage, "Profile settings saved.", "success");
   } catch (error) {
     console.error(error);
     setStatus(dom.studentStatusMessage, readableError(error), "error");

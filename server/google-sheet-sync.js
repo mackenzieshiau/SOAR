@@ -4,9 +4,15 @@ import { google } from "googleapis";
 import { extractGoogleSpreadsheetId } from "../app-logic.js";
 
 export const GOOGLE_SHEET_HEADERS = [
-  "Intervention ID",
+  "Record ID",
+  "Record Type",
   "Student ID",
   "Student Name",
+  "School Year",
+  "Class Code",
+  "Band",
+  "Grade Band",
+  "Current WIDA Level",
   "Date",
   "Timestamp",
   "Teacher Name",
@@ -20,6 +26,10 @@ export const GOOGLE_SHEET_HEADERS = [
   "Evidence Of Production",
   "Repeated In New Context",
   "New Context Note",
+  "WIDA Domain",
+  "WIDA Entry Level",
+  "WIDA Justification",
+  "WIDA Notes",
 ];
 
 const HEADER_BACKGROUND = { red: 0.898, green: 0.925, blue: 0.976 };
@@ -35,6 +45,17 @@ function asString(value) {
   return value == null ? "" : String(value);
 }
 
+function columnLetterFromIndex(index) {
+  let value = index;
+  let result = "";
+  while (value > 0) {
+    const remainder = (value - 1) % 26;
+    result = String.fromCharCode(65 + remainder) + result;
+    value = Math.floor((value - 1) / 26);
+  }
+  return result || "A";
+}
+
 function rowsEqual(left, right) {
   if (!Array.isArray(left) || !Array.isArray(right) || left.length !== right.length) {
     return false;
@@ -44,9 +65,15 @@ function rowsEqual(left, right) {
 
 export function buildSheetRowValues(row = {}) {
   return [
-    asString(row.interventionId),
+    asString(row.recordId),
+    asString(row.recordType),
     asString(row.studentId),
     asString(row.studentName),
+    asString(row.schoolYear),
+    asString(row.classCode),
+    asString(row.band),
+    asString(row.gradeBand),
+    asString(row.currentWidaLevel),
     asString(row.date),
     asString(row.timestamp),
     asString(row.teacherName),
@@ -60,6 +87,10 @@ export function buildSheetRowValues(row = {}) {
     asString(row.evidenceOfProduction),
     asString(row.repeatedInNewContext),
     asString(row.newContextNote),
+    asString(row.widaDomain),
+    asString(row.widaEntryLevel),
+    asString(row.widaJustification),
+    asString(row.widaNotes),
   ];
 }
 
@@ -188,7 +219,7 @@ async function readSheetRows(sheets, spreadsheetId, title) {
   try {
     const response = await sheets.spreadsheets.values.get({
       spreadsheetId,
-      range: `${quoteSheetTitle(title)}!A:P`,
+      range: `${quoteSheetTitle(title)}!A:${columnLetterFromIndex(GOOGLE_SHEET_HEADERS.length)}`,
     });
     return response.data.values || [];
   } catch (error) {
@@ -333,7 +364,7 @@ async function syncStudentSheet(sheets, spreadsheetId, studentSheet) {
 
   await sheets.spreadsheets.values.clear({
     spreadsheetId,
-    range: `${quoteSheetTitle(title)}!A:${String.fromCharCode(64 + GOOGLE_SHEET_HEADERS.length)}`,
+    range: `${quoteSheetTitle(title)}!A:${columnLetterFromIndex(GOOGLE_SHEET_HEADERS.length)}`,
   });
 
   await sheets.spreadsheets.values.update({
@@ -348,7 +379,7 @@ async function syncStudentSheet(sheets, spreadsheetId, studentSheet) {
   if (existingValues.length > nextValues.length) {
     await sheets.spreadsheets.values.clear({
       spreadsheetId,
-      range: `${quoteSheetTitle(title)}!A${clearStartRow}:P${existingValues.length + 10}`,
+      range: `${quoteSheetTitle(title)}!A${clearStartRow}:${columnLetterFromIndex(GOOGLE_SHEET_HEADERS.length)}${existingValues.length + 10}`,
     });
   }
 

@@ -150,7 +150,6 @@ export function normalizeSheetSyncConfig(rawSettings = {}, fallbackUrl = DEFAULT
 }
 
 export function buildStudentSheetTabs(students = []) {
-  const nameCounts = new Map();
   return (Array.isArray(students) ? students : [])
     .map((student) => {
       const studentId = asString(student?.id).trim();
@@ -158,15 +157,16 @@ export function buildStudentSheetTabs(students = []) {
       if (!studentId || !fullName) {
         return null;
       }
-      const [firstName = "Student"] = fullName.split(/\s+/);
-      const baseName = firstName.replace(/[:\\/?*\[\]]/g, "").slice(0, 80) || "Student";
-      const key = baseName.toLowerCase();
-      const nextCount = (nameCounts.get(key) || 0) + 1;
-      nameCounts.set(key, nextCount);
+      const classCode = asString(student?.classCode).trim();
+      const schoolYear = asString(student?.schoolYear).trim();
+      const baseName = fullName.replace(/[:\\/?*\[\]]/g, "").slice(0, 72) || "Student";
+      const sanitizedClassCode = classCode.replace(/[:\\/?*\[\]]/g, "").slice(0, 24);
       return {
         studentId,
         studentName: fullName,
-        sheetName: nextCount === 1 ? baseName : `${baseName}-${nextCount}`,
+        classCode,
+        schoolYear,
+        sheetName: sanitizedClassCode ? `${baseName} - ${sanitizedClassCode}` : baseName,
       };
     })
     .filter(Boolean);
@@ -195,14 +195,22 @@ export function buildGoogleSheetSyncPayload({
       groupedRows.set(tab.sheetName, {
         studentId: tab.studentId,
         studentName: tab.studentName,
+        classCode: tab.classCode,
+        schoolYear: tab.schoolYear,
         sheetName: tab.sheetName,
         rows: [],
       });
     }
     groupedRows.get(tab.sheetName).rows.push({
-      interventionId: asString(record?.id).trim(),
+      recordId: asString(record?.id).trim(),
+      recordType: asString(record?.recordType || "Intervention").trim(),
       studentId,
       studentName: tab.studentName,
+      schoolYear: asString(record?.schoolYear || tab.schoolYear).trim(),
+      classCode: asString(record?.classCode || tab.classCode).trim(),
+      band: asString(record?.band).trim(),
+      gradeBand: asString(record?.gradeBand).trim(),
+      currentWidaLevel: asString(record?.currentWidaLevel).trim(),
       date: asString(record?.date).trim(),
       timestamp: asString(record?.timestamp).trim(),
       teacherName: asString(record?.teacherName).trim(),
@@ -216,6 +224,10 @@ export function buildGoogleSheetSyncPayload({
       evidenceOfProduction: asString(record?.evidenceOfProduction).trim(),
       repeatedInNewContext: record?.repeatedInNewContext ? "Yes" : "No",
       newContextNote: asString(record?.newContextNote).trim(),
+      widaDomain: asString(record?.widaDomain).trim(),
+      widaEntryLevel: asString(record?.widaEntryLevel).trim(),
+      widaJustification: asString(record?.widaJustification).trim(),
+      widaNotes: asString(record?.widaNotes).trim(),
     });
   }
 
@@ -294,6 +306,32 @@ export function buildQuickAddEvidenceText(selectedEvidence = [], fallbackText = 
   return asString(interventionName).trim();
 }
 
+export function buildInterventionEvidenceText(
+  selectedEvidence = [],
+  detailText = "",
+  notesFallback = "",
+  interventionName = "",
+) {
+  const selected = (Array.isArray(selectedEvidence) ? selectedEvidence : [])
+    .map((value) => asString(value).trim())
+    .filter(Boolean);
+  const detail = asString(detailText).trim();
+  if (selected.length && detail) {
+    return `${selected.join("; ")}; ${detail}`;
+  }
+  if (selected.length) {
+    return selected.join("; ");
+  }
+  if (detail) {
+    return detail;
+  }
+  const fallback = asString(notesFallback).trim();
+  if (fallback) {
+    return fallback;
+  }
+  return asString(interventionName).trim();
+}
+
 export function createQuickLinkAction(overrides = {}) {
   return {
     id: asString(overrides.id || `action-${Math.random().toString(36).slice(2, 10)}`),
@@ -350,4 +388,38 @@ export function normalizeStoredQuickLinks(rawQuickLinks, actionLimit = QUICK_LIN
       updatedAt: quickLink?.updatedAt || "",
     }))
     .filter((quickLink) => quickLink.id && quickLink.title);
+}
+
+export function pruneGroupsForDeletedStudent(rawGroups, studentId) {
+  const normalizedStudentId = asString(studentId).trim();
+  const removedGroupIds = [];
+  const groups = normalizeStoredGroups(rawGroups)
+    .map((group) => ({
+      ...group,
+      studentIds: group.studentIds.filter((id) => id !== normalizedStudentId),
+    }))
+    .filter((group) => {
+      if (group.studentIds.length) {
+        return true;
+      }
+      removedGroupIds.push(group.id);
+      return false;
+    });
+
+  return {
+    groups,
+    removedGroupIds,
+  };
+}
+
+export function pruneQuickLinksForDeletedTargets(rawQuickLinks, { studentIds = [], groupIds = [] } = {}) {
+  const studentIdSet = new Set((Array.isArray(studentIds) ? studentIds : []).map((id) => asString(id).trim()));
+  const groupIdSet = new Set((Array.isArray(groupIds) ? groupIds : []).map((id) => asString(id).trim()));
+
+  return normalizeStoredQuickLinks(rawQuickLinks).filter((quickLink) => {
+    if (quickLink.targetType === "group") {
+      return !groupIdSet.has(quickLink.targetId);
+    }
+    return !studentIdSet.has(quickLink.targetId);
+  });
 }

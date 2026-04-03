@@ -9,9 +9,15 @@ import {
 
 test("buildSheetRowValues maps export rows into the sheet column order", () => {
   const row = buildSheetRowValues({
-    interventionId: "int-1",
+    recordId: "int-1",
+    recordType: "Intervention",
     studentId: "student-1",
     studentName: "Ava Martinez",
+    schoolYear: "2025-2026",
+    classCode: "R101",
+    band: "K-2",
+    gradeBand: "Grade 1",
+    currentWidaLevel: "2",
     date: "2026-03-29",
     timestamp: "2026-03-29T12:00:00.000Z",
     teacherName: "Mackenzie",
@@ -28,14 +34,14 @@ test("buildSheetRowValues maps export rows into the sheet column order", () => {
   });
 
   assert.equal(row.length, GOOGLE_SHEET_HEADERS.length);
-  assert.deepEqual(row.slice(0, 4), ["int-1", "student-1", "Ava Martinez", "2026-03-29"]);
-  assert.equal(row[11], "4");
+  assert.deepEqual(row.slice(0, 6), ["int-1", "Intervention", "student-1", "Ava Martinez", "2025-2026", "R101"]);
+  assert.equal(row[17], "4");
 });
 
 test("planSheetSync identifies new, changed, and removed rows", () => {
   const existingRows = [
     buildSheetRowValues({
-      interventionId: "int-1",
+      recordId: "int-1",
       studentId: "student-1",
       studentName: "Ava Martinez",
       app: "Lexia",
@@ -43,18 +49,18 @@ test("planSheetSync identifies new, changed, and removed rows", () => {
       taskDetail: "Vocabulary",
     }),
     buildSheetRowValues({
-      interventionId: "int-2",
+      recordId: "int-2",
       studentId: "student-1",
       studentName: "Ava Martinez",
-      app: "Lalilo",
-      interventionCategory: "Mini Mission",
-      taskDetail: "Sentence frame",
+      recordType: "WIDA",
+      widaDomain: "Reading",
+      widaEntryLevel: "2.0",
     }),
   ];
 
   const incomingRows = [
     buildSheetRowValues({
-      interventionId: "int-1",
+      recordId: "int-1",
       studentId: "student-1",
       studentName: "Ava Martinez",
       app: "Lexia",
@@ -62,7 +68,7 @@ test("planSheetSync identifies new, changed, and removed rows", () => {
       taskDetail: "Updated detail",
     }),
     buildSheetRowValues({
-      interventionId: "int-3",
+      recordId: "int-3",
       studentId: "student-1",
       studentName: "Ava Martinez",
       app: "Lexia",

@@ -14,24 +14,29 @@ export const DEFAULT_CONTENT_AREAS = [
   { id: "ca-reading", name: "Reading", active: true, sortOrder: 1 },
   { id: "ca-math", name: "Math", active: true, sortOrder: 2 },
   { id: "ca-language", name: "Language", active: true, sortOrder: 3 },
-  { id: "ca-mini-missions", name: "Mini Mission", active: true, sortOrder: 4 },
-  { id: "ca-focus-group", name: "Focus Group", active: true, sortOrder: 5 },
-  { id: "ca-other", name: "Other", active: true, sortOrder: 6 },
+  { id: "ca-fast-math", name: "Fast Math", active: true, sortOrder: 4 },
+  { id: "ca-mini-missions", name: "Mini Mission", active: true, sortOrder: 5 },
+  { id: "ca-focus-group", name: "Focus Group", active: true, sortOrder: 6 },
+  { id: "ca-other", name: "Other", active: true, sortOrder: 7 },
 ];
 
 export const DEFAULT_APPS = [
   { id: "app-amplify", name: "Amplify", contentAreaId: "ca-reading", active: true },
   { id: "app-lexia", name: "Lexia", contentAreaId: "ca-reading", active: true },
   { id: "app-mentava", name: "Mentava", contentAreaId: "ca-reading", active: true },
-  { id: "app-alpharead", name: "Alpha Read", contentAreaId: "ca-reading", active: true },
+  { id: "app-alpharead", name: "AlphaRead", contentAreaId: "ca-reading", active: true },
+  { id: "app-alphaphonics", name: "AlphaPhonics", contentAreaId: "ca-reading", active: true },
   { id: "app-anton", name: "Anton", contentAreaId: "ca-reading", active: true },
   { id: "app-clear-fluency", name: "Clear Fluency", contentAreaId: "ca-reading", active: true },
   { id: "app-reading-other", name: "Other", contentAreaId: "ca-reading", active: true },
   { id: "app-zearn", name: "Zearn", contentAreaId: "ca-math", active: true },
   { id: "app-freckle", name: "Freckle", contentAreaId: "ca-math", active: true },
+  { id: "app-timeback", name: "Timeback", contentAreaId: "ca-math", active: true },
   { id: "app-math-other", name: "Other", contentAreaId: "ca-math", active: true },
   { id: "app-lalilo", name: "Lalilo", contentAreaId: "ca-language", active: true },
   { id: "app-language-other", name: "Other", contentAreaId: "ca-language", active: true },
+  { id: "app-fast-math", name: "Fast Math", contentAreaId: "ca-fast-math", active: true },
+  { id: "app-fast-math-other", name: "Other", contentAreaId: "ca-fast-math", active: true },
   { id: "app-mini-mission", name: "Mini Mission", contentAreaId: "ca-mini-missions", active: true },
   { id: "app-mini-mission-other", name: "Other", contentAreaId: "ca-mini-missions", active: true },
   { id: "app-focus-group", name: "Focus Group", contentAreaId: "ca-focus-group", active: true },
@@ -75,6 +80,8 @@ export function buildDemoSeed() {
       band: "K-2",
       gradeBand: "Grade 1",
       widaLevel: "2",
+      schoolYear: "2025-2026",
+      classCode: "R101",
       allotmentLevel: "2",
       dailyAverageXpGoal: 80,
       active: true,
@@ -86,6 +93,8 @@ export function buildDemoSeed() {
       band: "K-2",
       gradeBand: "Grades 2-3",
       widaLevel: "3",
+      schoolYear: "2025-2026",
+      classCode: "M202",
       allotmentLevel: "3",
       dailyAverageXpGoal: 100,
       active: true,
@@ -97,6 +106,8 @@ export function buildDemoSeed() {
       band: "3-6",
       gradeBand: "Grades 4-5",
       widaLevel: "4",
+      schoolYear: "2025-2026",
+      classCode: "L305",
       allotmentLevel: "4",
       dailyAverageXpGoal: 90,
       active: true,
@@ -206,11 +217,25 @@ export function buildDemoSeed() {
     },
   ];
 
+  const widaLogs = [
+    {
+      id: "wida-ava-1",
+      studentId: "student-ava",
+      date: toIsoDate(dateWithOffset(-7)),
+      domain: "Reading",
+      level: "2.5",
+      justification: "Decoded patterned text with picture support and oral prompting.",
+      notes: "Ready to compare next reading sample in two weeks.",
+      createdAt: timestampFor(-7, 15, 10),
+    },
+  ];
+
   return {
     students,
     contentAreas: clone(DEFAULT_CONTENT_AREAS),
     apps: clone(DEFAULT_APPS),
     studentAppAssignments,
     interventions,
+    widaLogs,
   };
 }

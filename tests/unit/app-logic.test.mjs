@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  buildInterventionEvidenceText,
   DEFAULT_GOOGLE_SHEET_URL,
   QUICK_LINK_ACTION_LIMIT,
   buildQuickAddEvidenceText,
@@ -12,6 +13,8 @@ import {
   normalizeSheetSyncConfig,
   normalizeStoredGroups,
   normalizeStoredQuickLinks,
+  pruneGroupsForDeletedStudent,
+  pruneQuickLinksForDeletedTargets,
 } from "../../app-logic.js";
 
 test("createQuickLinkDraft builds three action slots by default", () => {
@@ -114,15 +117,33 @@ test("normalizeSheetSyncConfig uses the linked sheet fallback and parses spreads
 
 test("buildStudentSheetTabs creates unique first-name tabs", () => {
   const tabs = buildStudentSheetTabs([
-    { id: "student-1", name: "Ava Martinez" },
-    { id: "student-2", name: "Ava Lopez" },
-    { id: "student-3", name: "Liam Patel" },
+    { id: "student-1", name: "Ava Martinez", classCode: "R101", schoolYear: "2025-2026" },
+    { id: "student-2", name: "Ava Martinez", classCode: "R102", schoolYear: "2025-2026" },
+    { id: "student-3", name: "Liam Patel", classCode: "", schoolYear: "2025-2026" },
   ]);
 
   assert.deepEqual(tabs, [
-    { studentId: "student-1", studentName: "Ava Martinez", sheetName: "Ava" },
-    { studentId: "student-2", studentName: "Ava Lopez", sheetName: "Ava-2" },
-    { studentId: "student-3", studentName: "Liam Patel", sheetName: "Liam" },
+    {
+      studentId: "student-1",
+      studentName: "Ava Martinez",
+      classCode: "R101",
+      schoolYear: "2025-2026",
+      sheetName: "Ava Martinez - R101",
+    },
+    {
+      studentId: "student-2",
+      studentName: "Ava Martinez",
+      classCode: "R102",
+      schoolYear: "2025-2026",
+      sheetName: "Ava Martinez - R102",
+    },
+    {
+      studentId: "student-3",
+      studentName: "Liam Patel",
+      classCode: "",
+      schoolYear: "2025-2026",
+      sheetName: "Liam Patel",
+    },
   ]);
 });
 
@@ -135,15 +156,21 @@ test("buildGoogleSheetSyncPayload groups rows by student tab and keeps disparity
       googleSheetHighlightDisparities: true,
     },
     students: [
-      { id: "student-1", name: "Ava Martinez" },
-      { id: "student-2", name: "Ava Lopez" },
+      { id: "student-1", name: "Ava Martinez", classCode: "R101", schoolYear: "2025-2026" },
+      { id: "student-2", name: "Ava Lopez", classCode: "R102", schoolYear: "2025-2026" },
     ],
     records: [
       {
         id: "int-1",
+        recordType: "Intervention",
         studentId: "student-1",
         date: "2026-03-20",
         timestamp: "2026-03-20T14:00:00.000Z",
+        schoolYear: "2025-2026",
+        classCode: "R101",
+        band: "K-2",
+        gradeBand: "Grade 1",
+        currentWidaLevel: "2",
         teacherName: "Teacher A",
         groupName: "Reading Crew",
         contentAreaName: "Reading",
@@ -158,20 +185,30 @@ test("buildGoogleSheetSyncPayload groups rows by student tab and keeps disparity
       },
       {
         id: "int-2",
+        recordType: "WIDA",
         studentId: "student-2",
         date: "2026-03-21",
         timestamp: "2026-03-21T15:00:00.000Z",
-        teacherName: "Teacher B",
+        schoolYear: "2025-2026",
+        classCode: "R102",
+        band: "K-2",
+        gradeBand: "Grade 2",
+        currentWidaLevel: "3",
+        teacherName: "",
         groupName: "",
-        contentAreaName: "Language",
-        appName: "Lalilo",
-        interventionCategory: "Mini Mission",
-        taskDetail: "Sentence frame",
-        xpAwarded: 2,
+        contentAreaName: "",
+        appName: "",
+        interventionCategory: "",
+        taskDetail: "",
+        xpAwarded: "",
         notes: "",
-        evidenceOfProduction: "Completed prompt",
-        repeatedInNewContext: true,
-        newContextNote: "Repeated during centers",
+        evidenceOfProduction: "",
+        repeatedInNewContext: false,
+        newContextNote: "",
+        widaDomain: "Reading",
+        widaEntryLevel: "3.2",
+        widaJustification: "Improved reading comprehension",
+        widaNotes: "Spring benchmark",
       },
     ],
   });
@@ -182,12 +219,20 @@ test("buildGoogleSheetSyncPayload groups rows by student tab and keeps disparity
   assert.deepEqual(payload.sheets[0], {
     studentId: "student-1",
     studentName: "Ava Martinez",
-    sheetName: "Ava",
+    classCode: "R101",
+    schoolYear: "2025-2026",
+    sheetName: "Ava Martinez - R101",
     rows: [
       {
-        interventionId: "int-1",
+        recordId: "int-1",
+        recordType: "Intervention",
         studentId: "student-1",
         studentName: "Ava Martinez",
+        schoolYear: "2025-2026",
+        classCode: "R101",
+        band: "K-2",
+        gradeBand: "Grade 1",
+        currentWidaLevel: "2",
         date: "2026-03-20",
         timestamp: "2026-03-20T14:00:00.000Z",
         teacherName: "Teacher A",
@@ -201,11 +246,16 @@ test("buildGoogleSheetSyncPayload groups rows by student tab and keeps disparity
         evidenceOfProduction: "Student verbalized answers",
         repeatedInNewContext: "No",
         newContextNote: "",
+        widaDomain: "",
+        widaEntryLevel: "",
+        widaJustification: "",
+        widaNotes: "",
       },
     ],
   });
-  assert.equal(payload.sheets[1].sheetName, "Ava-2");
-  assert.equal(payload.sheets[1].rows[0].repeatedInNewContext, "Yes");
+  assert.equal(payload.sheets[1].sheetName, "Ava Lopez - R102");
+  assert.equal(payload.sheets[1].rows[0].recordType, "WIDA");
+  assert.equal(payload.sheets[1].rows[0].widaDomain, "Reading");
 });
 
 test("getQuickAddEvidenceTemplate returns TPR checklist options", () => {
@@ -244,4 +294,61 @@ test("buildQuickAddEvidenceText prefers selected evidence over notes fallback", 
   );
   assert.equal(buildQuickAddEvidenceText([], "Teacher note", "TPR"), "Teacher note");
   assert.equal(buildQuickAddEvidenceText([], "", "TPR"), "TPR");
+});
+
+test("buildInterventionEvidenceText combines selected evidence with optional details", () => {
+  assert.equal(
+    buildInterventionEvidenceText(
+      ["Student reads chorally", "Student then reads independently"],
+      "Read from decodable passage",
+      "Teacher note",
+      "Choral Repetition",
+    ),
+    "Student reads chorally; Student then reads independently; Read from decodable passage",
+  );
+  assert.equal(
+    buildInterventionEvidenceText([], "Custom evidence detail", "Teacher note", "TPR"),
+    "Custom evidence detail",
+  );
+});
+
+test("pruneGroupsForDeletedStudent removes memberships and drops empty groups", () => {
+  const result = pruneGroupsForDeletedStudent(
+    [
+      { id: "group-1", name: "Reading", studentIds: ["student-1", "student-2"], notes: "" },
+      { id: "group-2", name: "Solo", studentIds: ["student-1"], notes: "" },
+    ],
+    "student-1",
+  );
+
+  assert.deepEqual(result.groups, [
+    {
+      id: "group-1",
+      name: "Reading",
+      studentIds: ["student-2"],
+      notes: "",
+      createdAt: "",
+      updatedAt: "",
+    },
+  ]);
+  assert.deepEqual(result.removedGroupIds, ["group-2"]);
+});
+
+test("pruneQuickLinksForDeletedTargets removes links for deleted students and groups", () => {
+  const result = pruneQuickLinksForDeletedTargets(
+    [
+      { id: "quick-1", title: "Student Link", targetType: "student", targetId: "student-1", actions: [] },
+      { id: "quick-2", title: "Group Link", targetType: "group", targetId: "group-1", actions: [] },
+      { id: "quick-3", title: "Keep", targetType: "student", targetId: "student-9", actions: [] },
+    ],
+    {
+      studentIds: ["student-1"],
+      groupIds: ["group-1"],
+    },
+  );
+
+  assert.deepEqual(
+    result.map((quickLink) => quickLink.id),
+    ["quick-3"],
+  );
 });

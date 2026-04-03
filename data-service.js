@@ -4,8 +4,13 @@ import sqlWasmUrl from "sql.js/dist/sql-wasm.wasm?url";
 import { buildDemoSeed, DEFAULT_APPS, DEFAULT_CONTENT_AREAS } from "./seed-data.js";
 
 const DB_STORAGE_KEY = "soar-tracker-sqlite-db";
-const DEFAULT_ADMIN_PASSWORD_HASH =
+const DEFAULT_TEACHER_USERNAME = "teacher";
+const DEFAULT_TEACHER_PASSWORD_HASH =
   "03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4";
+const LEGACY_DEFAULT_ADMIN_PASSWORD_HASH =
+  "03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4";
+const DEFAULT_ADMIN_PASSWORD_HASH =
+  "257b773f96c63d8e0387dd4935238b9ec8c441eeedc040bf1788ad44d8b62e9c";
 
 const SQLITE_SCHEMA = `
   pragma foreign_keys = on;
@@ -16,6 +21,8 @@ const SQLITE_SCHEMA = `
     band text not null,
     grade_band text not null,
     wida_level integer not null,
+    school_year text not null default '',
+    class_code text not null default '',
     allotment_level integer not null default 1,
     daily_average_xp_goal integer not null default 120,
     active integer not null default 1,
@@ -63,6 +70,17 @@ const SQLITE_SCHEMA = `
     repeated_in_new_context integer not null default 0,
     new_context_note text,
     override_note text,
+    created_at text not null
+  );
+
+  create table if not exists wida_logs (
+    id text primary key,
+    student_id text not null references students(id),
+    date text not null,
+    domain text not null,
+    level text not null,
+    justification text,
+    notes text,
     created_at text not null
   );
 
@@ -132,6 +150,8 @@ function mapStudents(rows) {
     band: row.band,
     gradeBand: row.grade_band,
     widaLevel: String(row.wida_level),
+    schoolYear: row.school_year || "",
+    classCode: row.class_code || "",
     allotmentLevel: String(row.allotment_level ?? row.wida_level ?? 1),
     dailyAverageXpGoal: Number(row.daily_average_xp_goal ?? 120),
     active: toBoolean(row.active),
@@ -186,6 +206,19 @@ function mapInterventions(rows) {
     repeatedInNewContext: toBoolean(row.repeated_in_new_context),
     newContextNote: row.new_context_note || "",
     overrideNote: row.override_note || "",
+    createdAt: row.created_at,
+  }));
+}
+
+function mapWidaLogs(rows) {
+  return rows.map((row) => ({
+    id: row.id,
+    studentId: row.student_id,
+    date: row.date,
+    domain: row.domain,
+    level: row.level,
+    justification: row.justification || "",
+    notes: row.notes || "",
     createdAt: row.created_at,
   }));
 }
@@ -267,6 +300,12 @@ class SQLiteDataService {
     const studentColumns = new Set(
       this.query("pragma table_info(students)").map((column) => column.name),
     );
+    if (!studentColumns.has("school_year")) {
+      this.run("alter table students add column school_year text not null default ''");
+    }
+    if (!studentColumns.has("class_code")) {
+      this.run("alter table students add column class_code text not null default ''");
+    }
     if (!studentColumns.has("allotment_level")) {
       this.run(
         "alter table students add column allotment_level integer not null default 1",
@@ -280,7 +319,9 @@ class SQLiteDataService {
     this.run(
       `
         update students
-        set allotment_level = coalesce(allotment_level, wida_level, 1),
+        set school_year = coalesce(school_year, ''),
+            class_code = coalesce(class_code, ''),
+            allotment_level = coalesce(allotment_level, wida_level, 1),
             daily_average_xp_goal = coalesce(daily_average_xp_goal, 120)
       `,
     );
@@ -294,6 +335,19 @@ class SQLiteDataService {
     if (!interventionColumns.has("group_name")) {
       this.run("alter table interventions add column group_name text");
     }
+
+    this.run(`
+      create table if not exists wida_logs (
+        id text primary key,
+        student_id text not null references students(id),
+        date text not null,
+        domain text not null,
+        level text not null,
+        justification text,
+        notes text,
+        created_at text not null
+      )
+    `);
   }
 
   seedDatabase() {
@@ -308,6 +362,8 @@ class SQLiteDataService {
             band,
             grade_band,
             wida_level,
+            school_year,
+            class_code,
             allotment_level,
             daily_average_xp_goal,
             active,
@@ -319,6 +375,8 @@ class SQLiteDataService {
             $band,
             $gradeBand,
             $widaLevel,
+            $schoolYear,
+            $classCode,
             $allotmentLevel,
             $dailyAverageXpGoal,
             $active,
@@ -331,6 +389,8 @@ class SQLiteDataService {
           $band: student.band,
           $gradeBand: student.gradeBand,
           $widaLevel: Number(student.widaLevel),
+          $schoolYear: student.schoolYear || "",
+          $classCode: student.classCode || "",
           $allotmentLevel: Number(student.allotmentLevel || student.widaLevel),
           $dailyAverageXpGoal: Number(student.dailyAverageXpGoal || 120),
           $active: toDbBoolean(student.active),
@@ -449,6 +509,25 @@ class SQLiteDataService {
         },
       );
     });
+
+    (seed.widaLogs || []).forEach((entry) => {
+      this.run(
+        `
+          insert into wida_logs (id, student_id, date, domain, level, justification, notes, created_at)
+          values ($id, $studentId, $date, $domain, $level, $justification, $notes, $createdAt)
+        `,
+        {
+          $id: entry.id,
+          $studentId: entry.studentId,
+          $date: entry.date,
+          $domain: entry.domain,
+          $level: entry.level,
+          $justification: entry.justification || "",
+          $notes: entry.notes || "",
+          $createdAt: entry.createdAt || new Date().toISOString(),
+        },
+      );
+    });
   }
 
   ensureCatalogDefaults() {
@@ -545,6 +624,37 @@ class SQLiteDataService {
           $value: DEFAULT_ADMIN_PASSWORD_HASH,
         },
       );
+    } else if (adminPasswordHash.value === LEGACY_DEFAULT_ADMIN_PASSWORD_HASH) {
+      this.run(
+        `
+          update app_settings
+          set value = $value
+          where key = $key
+        `,
+        {
+          $key: "adminPasswordHash",
+          $value: DEFAULT_ADMIN_PASSWORD_HASH,
+        },
+      );
+    }
+
+    const defaultTeacher = this.queryOne("select id from guide_users limit 1");
+    if (!defaultTeacher) {
+      const now = new Date().toISOString();
+      this.run(
+        `
+          insert into guide_users (id, username, password_hash, active, created_at, updated_at)
+          values ($id, $username, $passwordHash, $active, $createdAt, $updatedAt)
+        `,
+        {
+          $id: "teacher-default",
+          $username: DEFAULT_TEACHER_USERNAME,
+          $passwordHash: DEFAULT_TEACHER_PASSWORD_HASH,
+          $active: 1,
+          $createdAt: now,
+          $updatedAt: now,
+        },
+      );
     }
   }
 
@@ -564,6 +674,9 @@ class SQLiteDataService {
       ),
       interventions: mapInterventions(
         this.query("select * from interventions order by timestamp desc"),
+      ),
+      widaLogs: mapWidaLogs(
+        this.query("select * from wida_logs order by date desc, created_at desc"),
       ),
       guideUsers: mapGuideUsers(
         this.query("select * from guide_users order by username asc"),
@@ -586,6 +699,8 @@ class SQLiteDataService {
               band = $band,
               grade_band = $gradeBand,
               wida_level = $widaLevel,
+              school_year = $schoolYear,
+              class_code = $classCode,
               allotment_level = $allotmentLevel,
               daily_average_xp_goal = $dailyAverageXpGoal,
               active = $active
@@ -597,6 +712,8 @@ class SQLiteDataService {
           $band: student.band,
           $gradeBand: student.gradeBand,
           $widaLevel: Number(student.widaLevel),
+          $schoolYear: String(student.schoolYear || "").trim(),
+          $classCode: String(student.classCode || "").trim(),
           $allotmentLevel: Number(student.allotmentLevel || student.widaLevel),
           $dailyAverageXpGoal: Number(student.dailyAverageXpGoal),
           $active: toDbBoolean(student.active),
@@ -611,6 +728,8 @@ class SQLiteDataService {
             band,
             grade_band,
             wida_level,
+            school_year,
+            class_code,
             allotment_level,
             daily_average_xp_goal,
             active,
@@ -622,6 +741,8 @@ class SQLiteDataService {
             $band,
             $gradeBand,
             $widaLevel,
+            $schoolYear,
+            $classCode,
             $allotmentLevel,
             $dailyAverageXpGoal,
             $active,
@@ -634,6 +755,8 @@ class SQLiteDataService {
           $band: student.band,
           $gradeBand: student.gradeBand,
           $widaLevel: Number(student.widaLevel),
+          $schoolYear: String(student.schoolYear || "").trim(),
+          $classCode: String(student.classCode || "").trim(),
           $allotmentLevel: Number(student.allotmentLevel || student.widaLevel),
           $dailyAverageXpGoal: Number(student.dailyAverageXpGoal),
           $active: toDbBoolean(student.active),
@@ -644,6 +767,76 @@ class SQLiteDataService {
 
     this.persist();
     return mapStudents(this.query("select * from students where id = $id", { $id: id }))[0];
+  }
+
+  async deleteStudent(studentId) {
+    await this.ensureReady();
+
+    this.run("delete from student_app_assignments where student_id = $studentId", {
+      $studentId: studentId,
+    });
+    this.run("delete from wida_logs where student_id = $studentId", {
+      $studentId: studentId,
+    });
+    this.run("delete from interventions where student_id = $studentId", {
+      $studentId: studentId,
+    });
+    this.run("delete from students where id = $studentId", {
+      $studentId: studentId,
+    });
+
+    this.persist();
+  }
+
+  async saveWidaLog(entry) {
+    await this.ensureReady();
+    const id = entry.id || generateId("wida-log");
+    const existing = this.queryOne("select id from wida_logs where id = $id", { $id: id });
+    const createdAt = entry.createdAt || new Date().toISOString();
+
+    if (existing) {
+      this.run(
+        `
+          update wida_logs
+          set student_id = $studentId,
+              date = $date,
+              domain = $domain,
+              level = $level,
+              justification = $justification,
+              notes = $notes
+          where id = $id
+        `,
+        {
+          $id: id,
+          $studentId: entry.studentId,
+          $date: entry.date,
+          $domain: String(entry.domain || "").trim(),
+          $level: String(entry.level || "").trim(),
+          $justification: String(entry.justification || "").trim(),
+          $notes: String(entry.notes || "").trim(),
+        },
+      );
+    } else {
+      this.run(
+        `
+          insert into wida_logs (id, student_id, date, domain, level, justification, notes, created_at)
+          values ($id, $studentId, $date, $domain, $level, $justification, $notes, $createdAt)
+        `,
+        {
+          $id: id,
+          $studentId: entry.studentId,
+          $date: entry.date,
+          $domain: String(entry.domain || "").trim(),
+          $level: String(entry.level || "").trim(),
+          $justification: String(entry.justification || "").trim(),
+          $notes: String(entry.notes || "").trim(),
+          $createdAt: createdAt,
+        },
+      );
+    }
+
+    this.persist();
+    return mapWidaLogs(this.query("select * from wida_logs where id = $id", { $id: id }))[0];
   }
 
   async saveContentArea(contentArea) {

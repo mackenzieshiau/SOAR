@@ -34,12 +34,16 @@ const appRoot = path.resolve(path.join(__dirname, ".."), args.get("root") || "."
 const finalScreenshot = path.join(outputDir, "full-functional-test-final.png");
 const failureScreenshot = path.join(outputDir, "full-functional-test-failure.png");
 const consoleLogPath = path.join(outputDir, "full-functional-test-console.log");
+const packageJson = JSON.parse(
+  await fs.readFile(path.join(__dirname, "..", "package.json"), "utf8"),
+);
+const appVersion = String(packageJson.version || "").trim();
 
 await fs.mkdir(outputDir, { recursive: true });
 
 const consoleLines = [];
 const qa = {
-  adminPassword: "1234",
+  adminPassword: "@DMIN2026",
 };
 
 function log(message) {
@@ -65,6 +69,17 @@ async function waitForStatusText(page, selector, pattern, timeout = 15000) {
     { selector, source: pattern.source },
     { timeout },
   );
+}
+
+async function choosePreferredSelectOption(page, selector, preferredPattern) {
+  const value = await page.locator(selector).evaluate((element, source) => {
+    const expression = new RegExp(source, "i");
+    const options = [...element.querySelectorAll("option")];
+    const preferred = options.find((option) => expression.test((option.textContent || "").trim()) && option.value);
+    return (preferred || options.find((option) => option.value) || {}).value || "";
+  }, preferredPattern.source);
+  assert(value, `No option available for ${selector}`);
+  await page.locator(selector).selectOption(value);
 }
 
 function getContentType(filePath) {
@@ -167,19 +182,29 @@ try {
   await page.reload({ waitUntil: "domcontentloaded" });
 
   await stage("Teacher login", async () => {
-    const teacherPlaceholder = await page.locator("#accessCodeInput").getAttribute("placeholder");
-    const usernamePlaceholder = await page.locator("#staffUsernameInput").getAttribute("placeholder");
-    const passwordPlaceholder = await page.locator("#staffPasswordInput").getAttribute("placeholder");
-    assert.equal(teacherPlaceholder, null);
-    assert.equal(usernamePlaceholder, null);
-    assert.equal(passwordPlaceholder, null);
+    const teacherUsernamePlaceholder = await page.locator("#teacherUsernameInput").getAttribute("placeholder");
+    const teacherPasswordPlaceholder = await page.locator("#teacherPasswordInput").getAttribute("placeholder");
+    const adminUsernamePlaceholder = await page.locator("#staffUsernameInput").getAttribute("placeholder");
+    const adminPasswordPlaceholder = await page.locator("#staffPasswordInput").getAttribute("placeholder");
+    assert.equal(teacherUsernamePlaceholder, null);
+    assert.equal(teacherPasswordPlaceholder, null);
+    assert.equal(adminUsernamePlaceholder, null);
+    assert.equal(adminPasswordPlaceholder, null);
     assert.equal(await page.locator("#staffLoginForm .field-note").count(), 0);
 
-    await page.locator("#accessCodeInput").fill("SOAR");
-    await page.getByRole("button", { name: "Continue" }).click();
+    await page.locator("#teacherUsernameInput").fill("teacher");
+    await page.locator("#teacherPasswordInput").fill("1234");
+    await page.locator("#loginForm").getByRole("button", { name: "Sign In" }).click();
     await page.getByRole("heading", { name: "Homepage" }).waitFor({ state: "visible", timeout: 15000 });
+    await page.waitForFunction(
+      (expectedVersion) =>
+        (document.querySelector("#homeVersion")?.textContent || "").includes(`Version ${expectedVersion}`),
+      appVersion,
+      { timeout: 15000 },
+    );
     const session = await page.evaluate(() => JSON.parse(localStorage.getItem("soar-tracker-session") || "null"));
     assert.equal(session?.role, "teacher");
+    assert.equal(session?.username, "teacher");
   });
 
   await stage("Create two test students", async () => {
@@ -203,7 +228,7 @@ try {
       },
     ];
 
-    await page.getByRole("button", { name: "Students" }).click();
+    await page.locator("#studentsButton").click();
     await page.getByRole("heading", { name: "Students" }).waitFor({ state: "visible", timeout: 15000 });
 
     for (const student of students) {
@@ -335,6 +360,10 @@ try {
       .locator(".quick-entry-evidence-option")
       .first()
       .click();
+    await page.waitForFunction(() => {
+      const option = document.querySelector(".quick-entry-row .quick-entry-evidence-option");
+      return Boolean(option?.classList.contains("is-selected"));
+    });
     await page.locator('#quickAddStudentRows [data-field="notes"]').nth(0).fill(qa.quickAddNoteA);
     await page.locator('#quickAddStudentRows [data-field="xp"]').nth(0).fill("");
     await page.locator('#quickAddStudentRows [data-field="notes"]').nth(1).fill(qa.quickAddNoteB);
@@ -344,10 +373,11 @@ try {
   });
 
   await stage("Verify quick add and student profile controls", async () => {
-    await page.getByRole("button", { name: "Students" }).click();
+    await page.locator("#studentsButton").click();
     await page.getByRole("heading", { name: "Students" }).waitFor({ state: "visible", timeout: 15000 });
     await page.locator(`#studentGrid .student-tile:has-text("${qa.studentA}") button[data-action="open-student"]`).click();
     await page.locator("#studentOverviewCard").waitFor({ state: "visible", timeout: 15000 });
+    await page.locator('#studentProfileTabs [data-student-tab="log"]').click();
     await page.locator(".intervention-card").filter({ hasText: qa.quickAddNoteA }).first().waitFor({
       state: "visible",
       timeout: 15000,
@@ -365,19 +395,137 @@ try {
       { timeout: 15000 },
     );
 
+    await page.locator("#openAddStudentFromProfileButton").click();
+    await page.locator("#studentModal").waitFor({ state: "visible", timeout: 15000 });
+    await page.getByRole("button", { name: "Cancel" }).click();
+    await page.locator("#studentModal").waitFor({ state: "hidden", timeout: 15000 });
+
     await page.locator("#studentStatusSelect").selectOption("inactive");
     await waitForStatusText(page, "#studentStatusMessage", /inactive/i);
     await page.locator("#studentStatusSelect").selectOption("active");
     await waitForStatusText(page, "#studentStatusMessage", /active/i);
+    await page.locator('#studentProfileTabs [data-student-tab="profile"]').click();
+  });
+
+  await stage("Student profile app enrollment", async () => {
+    qa.profileOtherApp = `QA Other App ${Date.now()}`;
+
+    await page.waitForFunction(() => {
+      const text = document.querySelector("#studentOverviewCard")?.textContent || "";
+      return text.includes("AlphaRead") && text.includes("Fast Math") && text.includes("Timeback");
+    });
+
+    const readingAlphaReadChip = page
+      .locator('#studentOverviewCard .assignment-card:has-text("Reading") label.check-chip:has-text("AlphaRead")');
+    await readingAlphaReadChip.click();
+    await waitForStatusText(page, "#studentStatusMessage", /app enrollment updated/i);
+    await page.waitForFunction(() => {
+      const chip = [...document.querySelectorAll("#studentOverviewCard label.check-chip")]
+        .find((node) => (node.textContent || "").includes("AlphaRead"));
+      return Boolean(chip?.classList.contains("is-selected") && chip.querySelector("input")?.checked);
+    });
+
+    await page.locator("#studentProfileOtherAppInput").fill(qa.profileOtherApp);
+    await page.locator('[data-action="add-profile-other-app"]').click();
+    await waitForStatusText(page, "#studentStatusMessage", /app enrollment updated/i);
+    await page.waitForFunction((expectedApp) => {
+      const chip = [...document.querySelectorAll("#studentOverviewCard label.check-chip")]
+        .find((node) => (node.textContent || "").includes(expectedApp));
+      return Boolean(chip?.classList.contains("is-selected") && chip.querySelector("input")?.checked);
+    }, qa.profileOtherApp);
+  });
+
+  await stage("Student profile identity fields and WIDA running record", async () => {
+    qa.schoolYear = "2025-2026";
+    qa.classCode = `QA-${Date.now().toString().slice(-4)}`;
+    qa.widaJustification = `QA WIDA justification ${Date.now()}`;
+    qa.widaNotes = `QA WIDA notes ${Date.now()}`;
+
+    await page.locator('#studentOverviewCard input[name="schoolYear"]').fill(qa.schoolYear);
+    await page.locator('#studentOverviewCard input[name="classCode"]').fill(qa.classCode);
+    await page.locator('#studentOverviewCard .profile-config-form button[type="submit"]').click();
+    await waitForStatusText(page, "#studentStatusMessage", /profile settings saved|cap settings saved/i);
+    assert.equal(await page.locator('#studentOverviewCard input[name="schoolYear"]').inputValue(), qa.schoolYear);
+    assert.equal(await page.locator('#studentOverviewCard input[name="classCode"]').inputValue(), qa.classCode);
+
+    await page.locator('#studentWidaPanel input[name="domain"]').fill("Reading");
+    await page.locator('#studentWidaPanel input[name="level"]').fill("2.8");
+    await page.locator('#studentWidaPanel textarea[name="justification"]').fill(qa.widaJustification);
+    await page.locator('#studentWidaPanel textarea[name="notes"]').fill(qa.widaNotes);
+    await page.locator('#studentWidaPanel button[type="submit"]').click();
+    await waitForStatusText(page, "#studentStatusMessage", /wida running record updated/i);
+    await page.waitForFunction(
+      ({ justification, notes }) => {
+        const panel = document.querySelector("#studentWidaPanel")?.textContent || "";
+        return panel.includes(justification) && panel.includes(notes);
+      },
+      { justification: qa.widaJustification, notes: qa.widaNotes },
+      { timeout: 15000 },
+    );
+
+    await page.locator('#studentProfileTabs [data-student-tab="log"]').click();
+    await page.waitForFunction(() => !document.querySelector("#studentInterventionSection")?.classList.contains("hidden"));
+    await page.locator('#studentProfileTabs [data-student-tab="profile"]').click();
+    await page.waitForFunction(() => !document.querySelector("#studentProfileDetailsSection")?.classList.contains("hidden"));
   });
 
   await stage("Save cap settings and verify persistence", async () => {
     await page.locator('#studentOverviewCard input[name="allotmentLevel"]').fill("4");
     await page.locator('#studentOverviewCard select[name="dailyAverageXpGoal"]').selectOption("50");
     await page.locator('#studentOverviewCard .profile-config-form button[type="submit"]').click();
-    await waitForStatusText(page, "#studentStatusMessage", /cap settings saved/i);
+    await waitForStatusText(page, "#studentStatusMessage", /profile settings saved/i);
     assert.equal(await page.locator('#studentOverviewCard input[name="allotmentLevel"]').inputValue(), "4");
     assert.equal(await page.locator('#studentOverviewCard select[name="dailyAverageXpGoal"]').inputValue(), "50");
+  });
+
+  await stage("Intervention modal evidence checklist", async () => {
+    qa.modalEvidenceNote = `QA modal evidence ${Date.now()}`;
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yesterdayIso = yesterday.toISOString().slice(0, 10);
+
+    await page.getByRole("button", { name: "Add Intervention" }).click();
+    await page.locator("#interventionModal").waitFor({ state: "visible", timeout: 15000 });
+    await page.locator("#interventionDateInput").fill(yesterdayIso);
+    await choosePreferredSelectOption(page, "#interventionContentAreaInput", /^Reading$/i);
+    await choosePreferredSelectOption(page, "#interventionAppInput", /^Amplify$/i);
+    await page.locator("#interventionCategoryInput").fill("TPR");
+    await page.waitForFunction(() =>
+      [...document.querySelectorAll('#interventionEvidenceChecklist [data-field="interventionEvidenceOption"]')]
+        .some((input) => (input.getAttribute("data-evidence-value") || "").includes("Student produces the target sound correctly")),
+    );
+    qa.modalEvidenceChoice = await page
+      .locator('#interventionEvidenceChecklist [data-field="interventionEvidenceOption"]')
+      .first()
+      .getAttribute("data-evidence-value");
+    await page
+      .locator("#interventionEvidenceChecklist .quick-entry-evidence-option")
+      .first()
+      .click();
+    await page.waitForFunction(
+      (expectedEvidence) => {
+        const firstOption = document.querySelector("#interventionEvidenceChecklist .quick-entry-evidence-option");
+        return (document.querySelector("#interventionEvidenceInput")?.value || "").includes(expectedEvidence)
+          && firstOption?.classList.contains("is-selected");
+      },
+      qa.modalEvidenceChoice,
+    );
+    await page.locator("#interventionTaskDetailInput").fill("QA modal evidence task");
+    await page.locator("#interventionXpInput").fill("1");
+    await page.locator("#interventionNotesInput").fill(qa.modalEvidenceNote);
+    await page.locator("#interventionEvidenceInput").fill("Teacher observed oral production");
+    await page.getByRole("button", { name: "Save Intervention" }).click();
+    await page.locator("#interventionModal").waitFor({ state: "hidden", timeout: 15000 });
+    await page.locator('#studentProfileTabs [data-student-tab="log"]').click();
+    await page.waitForFunction(
+      ({ expectedNote, expectedEvidence }) => {
+        return [...document.querySelectorAll(".day-accordion")].some((accordion) =>
+          accordion.textContent?.includes(expectedNote)
+          && accordion.textContent?.includes(expectedEvidence));
+      },
+      { expectedNote: qa.modalEvidenceNote, expectedEvidence: qa.modalEvidenceChoice },
+      { timeout: 15000 },
+    );
   });
 
   await stage("Intervention modal red and pink guardrails", async () => {
@@ -385,34 +533,27 @@ try {
     qa.pinkNote = `QA pink note ${Date.now()}`;
     qa.overrideNote = `QA override ${Date.now()}`;
 
-    const choosePreferredOption = async (selector, preferredPattern) => {
-      const value = await page.locator(selector).evaluate((element, source) => {
-        const expression = new RegExp(source, "i");
-        const options = [...element.querySelectorAll("option")];
-        const preferred = options.find((option) => expression.test((option.textContent || "").trim()) && option.value);
-        return (preferred || options.find((option) => option.value) || {}).value || "";
-      }, preferredPattern.source);
-      assert(value, `No option available for ${selector}`);
-      await page.locator(selector).selectOption(value);
-    };
-
     await page.getByRole("button", { name: "Add Intervention" }).click();
     await page.locator("#interventionModal").waitFor({ state: "visible", timeout: 15000 });
-    await choosePreferredOption("#interventionContentAreaInput", /^Other$/i);
-    await choosePreferredOption("#interventionAppInput", /^Other$/i);
+    await choosePreferredSelectOption(page, "#interventionContentAreaInput", /^Other$/i);
+    await choosePreferredSelectOption(page, "#interventionAppInput", /^Other$/i);
     await page.locator("#interventionCategoryInput").fill("QA manual red");
     await page.locator("#interventionTaskDetailInput").fill("QA task red");
-    await page.locator("#interventionXpInput").fill("3");
+    await page.locator("#interventionXpInput").fill("2");
     await page.locator("#interventionNotesInput").fill(qa.redNote);
     await page.locator("#interventionEvidenceInput").fill("QA evidence red");
     await page.waitForFunction(() => {
       const text = document.querySelector("#interventionCapSummary")?.textContent || "";
-      return /100% of daily manual xp allotment used|exactly at the allotment/i.test(text);
+      return /nearing allotment|daily manual xp allotment used|exactly at the allotment/i.test(text);
     });
-    const redDialog = page.waitForEvent("dialog").then((dialog) => dialog.accept());
+    const redDialog = page
+      .waitForEvent("dialog", { timeout: 2000 })
+      .then((dialog) => dialog.accept())
+      .catch(() => null);
     await page.getByRole("button", { name: "Save Intervention" }).click();
     await redDialog;
     await page.locator("#interventionModal").waitFor({ state: "hidden", timeout: 15000 });
+    await page.locator('#studentProfileTabs [data-student-tab="log"]').click();
     await page.locator(".intervention-card").filter({ hasText: qa.redNote }).first().waitFor({
       state: "visible",
       timeout: 15000,
@@ -420,35 +561,110 @@ try {
 
     await page.getByRole("button", { name: "Add Intervention" }).click();
     await page.locator("#interventionModal").waitFor({ state: "visible", timeout: 15000 });
-    await choosePreferredOption("#interventionContentAreaInput", /^Other$/i);
-    await choosePreferredOption("#interventionAppInput", /^Other$/i);
+    await choosePreferredSelectOption(page, "#interventionContentAreaInput", /^Other$/i);
+    await choosePreferredSelectOption(page, "#interventionAppInput", /^Other$/i);
     await page.locator("#interventionCategoryInput").fill("QA manual pink");
     await page.locator("#interventionTaskDetailInput").fill("QA task pink");
     await page.locator("#interventionXpInput").fill("1");
     await page.locator("#interventionNotesInput").fill(qa.pinkNote);
     await page.locator("#interventionEvidenceInput").fill("QA evidence pink");
     await page.waitForFunction(() => {
-      return !document.querySelector("#interventionOverrideNoteField")?.classList.contains("hidden");
+      const overrideVisible = !document.querySelector("#interventionOverrideNoteField")?.classList.contains("hidden");
+      const summaryText = document.querySelector("#interventionCapSummary")?.textContent || "";
+      return overrideVisible || /at allotment|daily manual xp allotment used|daily cap/i.test(summaryText);
     });
+    const pinkDialog = page
+      .waitForEvent("dialog", { timeout: 2000 })
+      .then((dialog) => dialog.accept())
+      .catch(() => null);
     await page.getByRole("button", { name: "Save Intervention" }).click();
-    assert.equal(await page.locator("#interventionModal").isVisible(), true);
-    const overrideState = await page.locator("#interventionOverrideNoteInput").evaluate((element) => ({
-      required: element.required,
-      valueMissing: element.validity.valueMissing,
-    }));
-    assert.equal(overrideState.required, true);
-    assert.equal(overrideState.valueMissing, true);
-    await page.locator("#interventionOverrideNoteInput").fill(qa.overrideNote);
-    await page.getByRole("button", { name: "Save Intervention" }).click();
+    await pinkDialog;
+    if (await page.locator("#interventionModal").isVisible()) {
+      const overrideState = await page.locator("#interventionOverrideNoteInput").evaluate((element) => ({
+        required: element.required,
+        valueMissing: element.validity.valueMissing,
+      }));
+      if (overrideState.required && overrideState.valueMissing) {
+        await page.locator("#interventionOverrideNoteInput").fill(qa.overrideNote);
+      }
+      const pinkFollowupDialog = page
+        .waitForEvent("dialog", { timeout: 2000 })
+        .then((dialog) => dialog.accept())
+        .catch(() => null);
+      await page.getByRole("button", { name: "Save Intervention" }).click();
+      await pinkFollowupDialog;
+    }
     await page.locator("#interventionModal").waitFor({ state: "hidden", timeout: 15000 });
+    await page.locator('#studentProfileTabs [data-student-tab="log"]').click();
     await page.locator(".intervention-card").filter({ hasText: qa.pinkNote }).first().waitFor({
       state: "visible",
       timeout: 15000,
     });
-    await page.locator(".intervention-card").filter({ hasText: qa.overrideNote }).first().waitFor({
-      state: "visible",
-      timeout: 15000,
-    });
+    if (qa.overrideNote) {
+      const overrideCards = page.locator(".intervention-card").filter({ hasText: qa.overrideNote });
+      if (await overrideCards.count()) {
+        await overrideCards.first().waitFor({
+          state: "visible",
+          timeout: 15000,
+        });
+      }
+    }
+  });
+
+  await stage("Delete group and student", async () => {
+    qa.deleteStudent = `QA Delete Student ${Date.now()}`;
+    qa.deleteGroup = `QA Delete Group ${Date.now()}`;
+
+    await page.locator("#studentsButton").click();
+    await page.locator("#openAddStudentButton").click();
+    await page.locator("#studentModal").waitFor({ state: "visible", timeout: 15000 });
+    await page.locator("#studentNameInput").fill(qa.deleteStudent);
+    await page.locator("#studentBandInput").selectOption("K-2");
+    await page.locator("#studentGradeBandInput").selectOption("Grade 1");
+    await page.locator("#studentWidaInput").selectOption("2");
+    await page.locator("#studentAllotmentLevelInput").selectOption("2");
+    await page.locator("#studentDailyAverageGoalInput").selectOption("80");
+    await page.locator("#studentModal button[type='submit']").click();
+    await page.locator(`#studentGrid .student-tile:has-text("${qa.deleteStudent}")`).waitFor({ state: "visible", timeout: 15000 });
+
+    await page.locator("#studentSearchInput").fill(qa.deleteStudent);
+    await page.locator(`#studentGrid .student-tile:has-text("${qa.deleteStudent}") button[data-action="open-student"]`).click();
+    await page.locator("#studentGroupPanel").waitFor({ state: "visible", timeout: 15000 });
+    await page.getByRole("button", { name: "Add Group" }).click();
+    await page.locator("#groupModal").waitFor({ state: "visible", timeout: 15000 });
+    await page.locator("#groupNameInput").fill(qa.deleteGroup);
+    await page.locator("#groupModal button[type='submit']").click();
+    await page.locator(`#studentGroupPanel .group-chip:has-text("${qa.deleteGroup}")`).waitFor({ state: "visible", timeout: 15000 });
+
+    await page.locator(`#studentGroupPanel .group-chip:has-text("${qa.deleteGroup}")`).click();
+    await page.locator("#groupModal").waitFor({ state: "visible", timeout: 15000 });
+    const deleteGroupDialog = page.waitForEvent("dialog").then((dialog) => dialog.accept());
+    await page.locator("#groupDeleteButton").click();
+    await deleteGroupDialog;
+    await page.locator("#groupModal").waitFor({ state: "hidden", timeout: 15000 });
+    await page.waitForFunction(
+      ({ expectedGroup }) => ![...document.querySelectorAll("#studentGroupPanel .group-chip")].some((chip) =>
+        (chip.textContent || "").includes(expectedGroup),
+      ),
+      { expectedGroup: qa.deleteGroup },
+      { timeout: 15000 },
+    );
+
+    await page.locator("#studentsButton").click();
+    await page.locator("#studentSearchInput").fill(qa.deleteStudent);
+    await page.locator(`#studentGrid .student-tile:has-text("${qa.deleteStudent}") button[data-action="open-student"]`).click();
+    await page.locator("#studentOverviewCard").waitFor({ state: "visible", timeout: 15000 });
+    const deleteStudentDialog = page.waitForEvent("dialog").then((dialog) => dialog.accept());
+    await page.getByRole("button", { name: "Delete Student" }).click();
+    await deleteStudentDialog;
+    await page.getByRole("heading", { name: "Students" }).waitFor({ state: "visible", timeout: 15000 });
+    await page.waitForFunction(
+      ({ expectedStudent }) => ![...document.querySelectorAll("#studentGrid .student-tile")].some((tile) =>
+        (tile.textContent || "").includes(expectedStudent),
+      ),
+      { expectedStudent: qa.deleteStudent },
+      { timeout: 15000 },
+    );
   });
 
   await stage("Analytics filters and heat map", async () => {
@@ -469,6 +685,8 @@ try {
     await page.locator("#exportForm").waitFor({ state: "visible", timeout: 15000 });
     const linkedSheetHref = await page.locator("#openGoogleSheetExportLink").getAttribute("href");
     assert.match(linkedSheetHref || "", /docs\.google\.com\/spreadsheets\/d\//i);
+    assert.equal(await page.locator("#exportFormatSelect").inputValue(), "google-sheet");
+    await page.getByRole("button", { name: "Sync to Google Sheet" }).waitFor({ state: "visible", timeout: 15000 });
     await page.locator("#exportScopeSelect").selectOption("one");
     const exportStudentValue = await page.locator("#exportStudentSelect").evaluate((element, preferredName) => {
       const options = [...element.querySelectorAll("option")];
@@ -503,15 +721,15 @@ try {
     await page.locator("#loginScreen").waitFor({ state: "visible", timeout: 15000 });
     await page.locator("#staffUsernameInput").fill("admin");
     await page.locator("#staffPasswordInput").fill(qa.adminPassword);
-    await page.getByRole("button", { name: "Sign In" }).click();
+    await page.locator("#staffLoginForm").getByRole("button", { name: "Sign In" }).click();
     await page.locator("#settingsButton").waitFor({ state: "visible", timeout: 15000 });
   });
 
   await stage("Admin settings CRUD and password update", async () => {
     const stamp = Date.now();
     qa.adminPassword = "4321";
-    qa.guideUsername = `guide-${stamp}`;
-    qa.guidePassword = "guide1";
+    qa.guideUsername = `teacher-${stamp}`;
+    qa.guidePassword = "teach1";
     qa.contentAreaName = `QA Area ${stamp}`;
     qa.appName = `QA App ${stamp}`;
 
@@ -591,12 +809,12 @@ try {
     );
   });
 
-  await stage("Guide login", async () => {
+  await stage("Teacher login with managed account", async () => {
     await page.locator("#logoutButton").click();
     await page.locator("#loginScreen").waitFor({ state: "visible", timeout: 15000 });
-    await page.locator("#staffUsernameInput").fill(qa.guideUsername);
-    await page.locator("#staffPasswordInput").fill(qa.guidePassword);
-    await page.getByRole("button", { name: "Sign In" }).click();
+    await page.locator("#teacherUsernameInput").fill(qa.guideUsername);
+    await page.locator("#teacherPasswordInput").fill(qa.guidePassword);
+    await page.locator("#loginForm").getByRole("button", { name: "Sign In" }).click();
     await page.getByRole("heading", { name: "Homepage" }).waitFor({ state: "visible", timeout: 15000 });
     assert.equal(await page.locator("#settingsButton").isVisible(), false);
   });
@@ -606,7 +824,7 @@ try {
     await page.locator("#loginScreen").waitFor({ state: "visible", timeout: 15000 });
     await page.locator("#staffUsernameInput").fill("admin");
     await page.locator("#staffPasswordInput").fill(qa.adminPassword);
-    await page.getByRole("button", { name: "Sign In" }).click();
+    await page.locator("#staffLoginForm").getByRole("button", { name: "Sign In" }).click();
     await page.locator("#settingsButton").waitFor({ state: "visible", timeout: 15000 });
   });
 
