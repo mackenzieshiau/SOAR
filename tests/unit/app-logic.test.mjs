@@ -159,6 +159,18 @@ test("buildGoogleSheetSyncPayload groups rows by student tab and keeps disparity
       { id: "student-1", name: "Ava Martinez", classCode: "R101", schoolYear: "2025-2026" },
       { id: "student-2", name: "Ava Lopez", classCode: "R102", schoolYear: "2025-2026" },
     ],
+    widaLogs: [
+      {
+        id: "wida-1",
+        studentId: "student-2",
+        date: "2026-03-21",
+        domain: "Reading",
+        level: "3.2",
+        justification: "Improved reading comprehension",
+        notes: "Spring benchmark",
+        createdAt: "2026-03-21T15:00:00.000Z",
+      },
+    ],
     records: [
       {
         id: "int-1",
@@ -216,6 +228,7 @@ test("buildGoogleSheetSyncPayload groups rows by student tab and keeps disparity
   assert.equal(payload.syncMode, "upsert-by-intervention-id");
   assert.equal(payload.highlightDisparities, true);
   assert.equal(payload.sheets.length, 2);
+  assert.equal(payload.profileSheets.length, 2);
   assert.deepEqual(payload.sheets[0], {
     studentId: "student-1",
     studentName: "Ava Martinez",
@@ -256,6 +269,12 @@ test("buildGoogleSheetSyncPayload groups rows by student tab and keeps disparity
   assert.equal(payload.sheets[1].sheetName, "Ava Lopez - R102");
   assert.equal(payload.sheets[1].rows[0].recordType, "WIDA");
   assert.equal(payload.sheets[1].rows[0].widaDomain, "Reading");
+  assert.equal(payload.profileSheets[0].sheetName, "Ava Martinez - R101 Profile");
+  assert.equal(payload.profileSheets[0].rows[0].recordType, "Profile");
+  assert.equal(payload.profileSheets[0].rows[0].classCode, "R101");
+  assert.equal(payload.profileSheets[1].rows[0].recordType, "Profile");
+  assert.equal(payload.profileSheets[1].rows[1].recordType, "WIDA Observation");
+  assert.equal(payload.profileSheets[1].rows[1].widaDomain, "Reading");
 });
 
 test("getQuickAddEvidenceTemplate returns TPR checklist options", () => {

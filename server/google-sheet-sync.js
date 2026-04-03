@@ -31,6 +31,31 @@ export const GOOGLE_SHEET_HEADERS = [
   "WIDA Justification",
   "WIDA Notes",
 ];
+export const GOOGLE_PROFILE_SHEET_HEADERS = [
+  "Record ID",
+  "Record Type",
+  "Student ID",
+  "Student Name",
+  "Status",
+  "School Year",
+  "Class Code",
+  "Band",
+  "Grade Band",
+  "Current WIDA Level",
+  "Allotment Level",
+  "Daily Average XP Goal",
+  "Reading Apps",
+  "Language Apps",
+  "Fast Math Apps",
+  "Math Apps",
+  "Other Apps",
+  "Observation Date",
+  "WIDA Domain",
+  "WIDA Entry Level",
+  "WIDA Justification",
+  "WIDA Notes",
+  "Last Updated",
+];
 export const GOOGLE_SHEET_STATUS_COLUMN_INDEX = GOOGLE_SHEET_HEADERS.length + 1;
 export const GOOGLE_SHEET_REQUIRED_COLUMN_COUNT = GOOGLE_SHEET_STATUS_COLUMN_INDEX + 1;
 
@@ -93,6 +118,34 @@ export function buildSheetRowValues(row = {}) {
     asString(row.widaEntryLevel),
     asString(row.widaJustification),
     asString(row.widaNotes),
+  ];
+}
+
+export function buildProfileSheetRowValues(row = {}) {
+  return [
+    asString(row.recordId),
+    asString(row.recordType),
+    asString(row.studentId),
+    asString(row.studentName),
+    asString(row.status),
+    asString(row.schoolYear),
+    asString(row.classCode),
+    asString(row.band),
+    asString(row.gradeBand),
+    asString(row.currentWidaLevel),
+    asString(row.allotmentLevel),
+    asString(row.dailyAverageXpGoal),
+    asString(row.readingApps),
+    asString(row.languageApps),
+    asString(row.fastMathApps),
+    asString(row.mathApps),
+    asString(row.otherApps),
+    asString(row.observationDate),
+    asString(row.widaDomain),
+    asString(row.widaEntryLevel),
+    asString(row.widaJustification),
+    asString(row.widaNotes),
+    asString(row.lastUpdated),
   ];
 }
 
@@ -186,19 +239,19 @@ async function createSheetsClient(env = process.env) {
   });
 }
 
-export function buildSheetGridResizeRequests(sheetId, gridProperties = {}, rowCount = 0) {
+export function buildSheetGridResizeRequests(sheetId, gridProperties = {}, rowCount = 0, columnCount = GOOGLE_SHEET_REQUIRED_COLUMN_COUNT) {
   const requests = [];
   const currentColumnCount = Number(gridProperties?.columnCount || 0);
   const currentRowCount = Number(gridProperties?.rowCount || 0);
   const nextRowCount = Math.max(currentRowCount, rowCount, 1);
 
-  if (currentColumnCount < GOOGLE_SHEET_REQUIRED_COLUMN_COUNT || currentRowCount < nextRowCount) {
+  if (currentColumnCount < columnCount || currentRowCount < nextRowCount) {
     requests.push({
       updateSheetProperties: {
         properties: {
           sheetId,
           gridProperties: {
-            columnCount: Math.max(currentColumnCount, GOOGLE_SHEET_REQUIRED_COLUMN_COUNT),
+            columnCount: Math.max(currentColumnCount, columnCount),
             rowCount: nextRowCount,
           },
         },
@@ -256,7 +309,24 @@ async function readSheetRows(sheets, spreadsheetId, title) {
   }
 }
 
-function buildFormatRequests(sheetId, rowCount, finalRows, removedCount) {
+async function readSheetRowsWithHeaders(sheets, spreadsheetId, title, headers) {
+  try {
+    const response = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: `${quoteSheetTitle(title)}!A:${columnLetterFromIndex(headers.length)}`,
+    });
+    return response.data.values || [];
+  } catch (error) {
+    if (error?.code === 400 || error?.code === 404) {
+      return [];
+    }
+    throw error;
+  }
+}
+
+function buildFormatRequests(sheetId, rowCount, finalRows, removedCount, headers) {
+  const headerLength = headers.length;
+  const statusColumnIndex = headerLength + 1;
   const requests = [
     {
       repeatCell: {
@@ -265,7 +335,7 @@ function buildFormatRequests(sheetId, rowCount, finalRows, removedCount) {
           startRowIndex: 0,
           endRowIndex: 1,
           startColumnIndex: 0,
-          endColumnIndex: GOOGLE_SHEET_HEADERS.length,
+          endColumnIndex: headerLength,
         },
         cell: {
           userEnteredFormat: {
@@ -297,7 +367,7 @@ function buildFormatRequests(sheetId, rowCount, finalRows, removedCount) {
           startRowIndex: 1,
           endRowIndex: rowCount,
           startColumnIndex: 0,
-          endColumnIndex: GOOGLE_SHEET_HEADERS.length,
+          endColumnIndex: headerLength,
         },
         cell: {
           userEnteredFormat: {
@@ -320,7 +390,7 @@ function buildFormatRequests(sheetId, rowCount, finalRows, removedCount) {
           startRowIndex: index + 1,
           endRowIndex: index + 2,
           startColumnIndex: 0,
-          endColumnIndex: GOOGLE_SHEET_HEADERS.length,
+          endColumnIndex: headerLength,
         },
         cell: {
           userEnteredFormat: {
@@ -337,7 +407,7 @@ function buildFormatRequests(sheetId, rowCount, finalRows, removedCount) {
       start: {
         sheetId,
         rowIndex: 0,
-        columnIndex: GOOGLE_SHEET_STATUS_COLUMN_INDEX,
+        columnIndex: statusColumnIndex,
       },
       rows: [
         {
@@ -366,7 +436,7 @@ function buildFormatRequests(sheetId, rowCount, finalRows, removedCount) {
         sheetId,
         dimension: "COLUMNS",
         startIndex: 0,
-        endIndex: GOOGLE_SHEET_HEADERS.length,
+        endIndex: headerLength,
       },
     },
   });
@@ -374,8 +444,8 @@ function buildFormatRequests(sheetId, rowCount, finalRows, removedCount) {
   return requests;
 }
 
-async function syncStudentSheet(sheets, spreadsheetId, studentSheet) {
-  const title = asString(studentSheet?.sheetName).trim();
+async function syncSheetTab(sheets, spreadsheetId, sheetDefinition, headers, mapRowValues) {
+  const title = asString(sheetDefinition?.sheetName).trim();
   if (!title) {
     return { newRows: 0, changedRows: 0, removedRows: 0 };
   }
@@ -385,17 +455,18 @@ async function syncStudentSheet(sheets, spreadsheetId, studentSheet) {
   if (sheetId == null) {
     throw new Error(`Unable to resolve Google Sheet tab for ${title}.`);
   }
-  const existingValues = await readSheetRows(sheets, spreadsheetId, title);
+  const existingValues = await readSheetRowsWithHeaders(sheets, spreadsheetId, title, headers);
   const existingRows = existingValues.slice(1);
-  const incomingRows = (studentSheet.rows || []).map(buildSheetRowValues);
+  const incomingRows = (sheetDefinition.rows || []).map(mapRowValues);
   const plan = planSheetSync(existingRows, incomingRows);
-  const nextValues = [GOOGLE_SHEET_HEADERS, ...plan.finalRows.map((row) => row.values)];
+  const nextValues = [headers, ...plan.finalRows.map((row) => row.values)];
   const clearStartRow = nextValues.length + 1;
 
   const gridResizeRequests = buildSheetGridResizeRequests(
     sheetId,
     sheetProperties?.gridProperties,
     Math.max(nextValues.length + 10, existingValues.length + 10),
+    headers.length + 2,
   );
   if (gridResizeRequests.length) {
     await sheets.spreadsheets.batchUpdate({
@@ -408,7 +479,7 @@ async function syncStudentSheet(sheets, spreadsheetId, studentSheet) {
 
   await sheets.spreadsheets.values.clear({
     spreadsheetId,
-    range: `${quoteSheetTitle(title)}!A:${columnLetterFromIndex(GOOGLE_SHEET_HEADERS.length)}`,
+    range: `${quoteSheetTitle(title)}!A:${columnLetterFromIndex(headers.length)}`,
   });
 
   await sheets.spreadsheets.values.update({
@@ -423,7 +494,7 @@ async function syncStudentSheet(sheets, spreadsheetId, studentSheet) {
   if (existingValues.length > nextValues.length) {
     await sheets.spreadsheets.values.clear({
       spreadsheetId,
-      range: `${quoteSheetTitle(title)}!A${clearStartRow}:${columnLetterFromIndex(GOOGLE_SHEET_HEADERS.length)}${existingValues.length + 10}`,
+      range: `${quoteSheetTitle(title)}!A${clearStartRow}:${columnLetterFromIndex(headers.length)}${existingValues.length + 10}`,
     });
   }
 
@@ -435,6 +506,7 @@ async function syncStudentSheet(sheets, spreadsheetId, studentSheet) {
         nextValues.length,
         plan.finalRows,
         plan.removedRows.length,
+        headers,
       ),
     },
   });
@@ -446,6 +518,26 @@ async function syncStudentSheet(sheets, spreadsheetId, studentSheet) {
   };
 }
 
+async function syncStudentSheet(sheets, spreadsheetId, studentSheet) {
+  return syncSheetTab(
+    sheets,
+    spreadsheetId,
+    studentSheet,
+    GOOGLE_SHEET_HEADERS,
+    buildSheetRowValues,
+  );
+}
+
+async function syncStudentProfileSheet(sheets, spreadsheetId, studentSheet) {
+  return syncSheetTab(
+    sheets,
+    spreadsheetId,
+    studentSheet,
+    GOOGLE_PROFILE_SHEET_HEADERS,
+    buildProfileSheetRowValues,
+  );
+}
+
 export async function syncGoogleSheetPayload(payload, env = process.env) {
   const spreadsheetId = getSpreadsheetId(env, payload);
   if (!spreadsheetId) {
@@ -454,6 +546,7 @@ export async function syncGoogleSheetPayload(payload, env = process.env) {
 
   const sheets = await createSheetsClient(env);
   const studentSheets = Array.isArray(payload?.sheets) ? payload.sheets : [];
+  const profileSheets = Array.isArray(payload?.profileSheets) ? payload.profileSheets : [];
   let newRows = 0;
   let changedRows = 0;
   let removedRows = 0;
@@ -465,13 +558,20 @@ export async function syncGoogleSheetPayload(payload, env = process.env) {
     removedRows += result.removedRows;
   }
 
+  for (const profileSheet of profileSheets) {
+    const result = await syncStudentProfileSheet(sheets, spreadsheetId, profileSheet);
+    newRows += result.newRows;
+    changedRows += result.changedRows;
+    removedRows += result.removedRows;
+  }
+
   return {
     spreadsheetId,
     newRows,
     changedRows,
     removedRows,
     message:
-      `${studentSheets.length} student tab${studentSheets.length === 1 ? "" : "s"} synced. `
+      `${studentSheets.length + profileSheets.length} tab${studentSheets.length + profileSheets.length === 1 ? "" : "s"} synced. `
       + `${newRows} new, ${changedRows} changed, ${removedRows} stale row${removedRows === 1 ? "" : "s"} removed.`,
   };
 }

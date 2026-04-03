@@ -4998,6 +4998,7 @@ async function handleExportSubmit(event) {
 
     if (format === "google-sheet") {
       const result = await syncExportToGoogleSheet({
+        studentId,
         records,
         startDate,
         endDate,
@@ -5070,6 +5071,7 @@ async function handleStudentSheetSyncSubmit(event) {
       endDate,
     });
     const result = await syncExportToGoogleSheet({
+      studentId: student.id,
       records,
       startDate,
       endDate,
@@ -5086,11 +5088,12 @@ async function handleStudentSheetSyncSubmit(event) {
   }
 }
 
-async function syncExportToGoogleSheet({ records, startDate, endDate }) {
+async function syncExportToGoogleSheet({ studentId = null, records, startDate, endDate }) {
   const sheetConfig = getGoogleSheetSyncConfig();
   if (!sheetConfig.spreadsheetUrl || !sheetConfig.spreadsheetId) {
     throw new Error("The shared Google Sheet link is missing from the app configuration.");
   }
+  const scopedStudents = getActiveStudents().filter((student) => !studentId || student.id === studentId);
   const response = await fetch(sheetConfig.syncEndpointUrl, {
     method: "POST",
     headers: {
@@ -5099,7 +5102,11 @@ async function syncExportToGoogleSheet({ records, startDate, endDate }) {
     body: JSON.stringify(
       buildGoogleSheetSyncPayload({
         records,
-        students: getActiveStudents(),
+        students: scopedStudents,
+        assignments: state.data.studentAppAssignments,
+        apps: state.data.apps,
+        contentAreas: state.data.contentAreas,
+        widaLogs: state.data.widaLogs,
         startDate,
         endDate,
         sheetConfig,

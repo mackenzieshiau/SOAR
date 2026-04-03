@@ -1,6 +1,13 @@
 export const QUICK_LINK_ACTION_LIMIT = 3;
 export const DEFAULT_GOOGLE_SHEET_URL =
   "https://docs.google.com/spreadsheets/d/1BBFCU-FuQgb7VNDiTuotpbWGR0cdOTxJ3FxyRWd706A/edit?usp=drivesdk";
+export const PROFILE_SHEET_APP_SECTIONS = [
+  { contentAreaId: "ca-reading", label: "Reading Apps" },
+  { contentAreaId: "ca-language", label: "Language Apps" },
+  { contentAreaId: "ca-fast-math", label: "Fast Math Apps" },
+  { contentAreaId: "ca-math", label: "Math Apps" },
+  { contentAreaId: "ca-other", label: "Other Apps" },
+];
 export const QUICK_ADD_EVIDENCE_LIBRARY = {
   tpr: {
     title: "TPR / physical encoding",
@@ -172,9 +179,58 @@ export function buildStudentSheetTabs(students = []) {
     .filter(Boolean);
 }
 
+function buildStudentProfileSheetName(sheetName) {
+  const suffix = " Profile";
+  const base = asString(sheetName).trim() || "Student";
+  const maxBaseLength = 100 - suffix.length;
+  return `${base.slice(0, maxBaseLength)}${suffix}`;
+}
+
+function buildProfileAppColumns(studentId, assignments = [], apps = [], contentAreas = []) {
+  const activeAssignmentMap = new Map(
+    (Array.isArray(assignments) ? assignments : [])
+      .filter((assignment) => assignment?.studentId === studentId && assignment?.active)
+      .map((assignment) => [assignment.appId, assignment]),
+  );
+  const appMap = new Map((Array.isArray(apps) ? apps : []).map((app) => [app.id, app]));
+  const contentAreaMap = new Map(
+    (Array.isArray(contentAreas) ? contentAreas : []).map((contentArea) => [contentArea.id, contentArea]),
+  );
+  const groupedLabels = new Map(PROFILE_SHEET_APP_SECTIONS.map((section) => [section.label, []]));
+
+  for (const appId of activeAssignmentMap.keys()) {
+    const app = appMap.get(appId);
+    if (!app?.active) {
+      continue;
+    }
+    const contentArea = contentAreaMap.get(app.contentAreaId);
+    const matchingSection = PROFILE_SHEET_APP_SECTIONS.find(
+      (section) => section.contentAreaId === app.contentAreaId,
+    );
+    const targetLabel = matchingSection?.label || "Other Apps";
+    const currentLabels = groupedLabels.get(targetLabel) || [];
+    const displayName = matchingSection
+      ? app.name
+      : `${contentArea?.name || "Other"}: ${app.name}`;
+    currentLabels.push(displayName);
+    groupedLabels.set(targetLabel, currentLabels);
+  }
+
+  return Object.fromEntries(
+    PROFILE_SHEET_APP_SECTIONS.map((section) => [
+      section.label,
+      [...new Set(groupedLabels.get(section.label) || [])].sort((left, right) => left.localeCompare(right)).join(", "),
+    ]),
+  );
+}
+
 export function buildGoogleSheetSyncPayload({
   records = [],
   students = [],
+  assignments = [],
+  apps = [],
+  contentAreas = [],
+  widaLogs = [],
   startDate = "",
   endDate = "",
   sheetConfig = {},
@@ -184,6 +240,7 @@ export function buildGoogleSheetSyncPayload({
     buildStudentSheetTabs(students).map((tab) => [tab.studentId, tab]),
   );
   const groupedRows = new Map();
+  const profileSheets = [];
 
   for (const record of Array.isArray(records) ? records : []) {
     const studentId = asString(record?.studentId).trim();
@@ -231,6 +288,90 @@ export function buildGoogleSheetSyncPayload({
     });
   }
 
+  for (const student of Array.isArray(students) ? students : []) {
+    const tab = tabMap.get(asString(student?.id).trim());
+    if (!tab) {
+      continue;
+    }
+    const appColumns = buildProfileAppColumns(
+      tab.studentId,
+      assignments,
+      apps,
+      contentAreas,
+    );
+    const filteredWidaLogs = (Array.isArray(widaLogs) ? widaLogs : [])
+      .filter((entry) => entry?.studentId === tab.studentId)
+      .filter((entry) => {
+        const date = asString(entry?.date).trim();
+        return (!startDate || date >= startDate) && (!endDate || date <= endDate);
+      })
+      .sort((left, right) => {
+        const leftDate = asString(left?.date).trim();
+        const rightDate = asString(right?.date).trim();
+        return rightDate.localeCompare(leftDate);
+      });
+
+    profileSheets.push({
+      studentId: tab.studentId,
+      studentName: tab.studentName,
+      classCode: tab.classCode,
+      schoolYear: tab.schoolYear,
+      sheetName: buildStudentProfileSheetName(tab.sheetName),
+      rows: [
+        {
+          recordId: `profile-${tab.studentId}`,
+          recordType: "Profile",
+          studentId: tab.studentId,
+          studentName: tab.studentName,
+          status: student?.active ? "Active" : "Inactive",
+          schoolYear: tab.schoolYear,
+          classCode: tab.classCode,
+          band: asString(student?.band).trim(),
+          gradeBand: asString(student?.gradeBand).trim(),
+          currentWidaLevel: asString(student?.widaLevel).trim(),
+          allotmentLevel: asString(student?.allotmentLevel).trim(),
+          dailyAverageXpGoal: asString(student?.dailyAverageXpGoal).trim(),
+          readingApps: appColumns["Reading Apps"] || "",
+          languageApps: appColumns["Language Apps"] || "",
+          fastMathApps: appColumns["Fast Math Apps"] || "",
+          mathApps: appColumns["Math Apps"] || "",
+          otherApps: appColumns["Other Apps"] || "",
+          observationDate: "",
+          widaDomain: "",
+          widaEntryLevel: "",
+          widaJustification: "",
+          widaNotes: "",
+          lastUpdated: "",
+        },
+        ...filteredWidaLogs.map((entry) => ({
+          recordId: asString(entry?.id).trim(),
+          recordType: "WIDA Observation",
+          studentId: tab.studentId,
+          studentName: tab.studentName,
+          status: student?.active ? "Active" : "Inactive",
+          schoolYear: tab.schoolYear,
+          classCode: tab.classCode,
+          band: asString(student?.band).trim(),
+          gradeBand: asString(student?.gradeBand).trim(),
+          currentWidaLevel: asString(student?.widaLevel).trim(),
+          allotmentLevel: asString(student?.allotmentLevel).trim(),
+          dailyAverageXpGoal: asString(student?.dailyAverageXpGoal).trim(),
+          readingApps: appColumns["Reading Apps"] || "",
+          languageApps: appColumns["Language Apps"] || "",
+          fastMathApps: appColumns["Fast Math Apps"] || "",
+          mathApps: appColumns["Math Apps"] || "",
+          otherApps: appColumns["Other Apps"] || "",
+          observationDate: asString(entry?.date).trim(),
+          widaDomain: asString(entry?.domain).trim(),
+          widaEntryLevel: asString(entry?.level).trim(),
+          widaJustification: asString(entry?.justification).trim(),
+          widaNotes: asString(entry?.notes).trim(),
+          lastUpdated: asString(entry?.createdAt).trim(),
+        })),
+      ],
+    });
+  }
+
   return {
     spreadsheetId: normalizedConfig.spreadsheetId,
     spreadsheetUrl: normalizedConfig.spreadsheetUrl,
@@ -241,6 +382,7 @@ export function buildGoogleSheetSyncPayload({
       endDate: asString(endDate).trim(),
     },
     sheets: [...groupedRows.values()],
+    profileSheets,
   };
 }
 

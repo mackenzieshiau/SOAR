@@ -3,8 +3,10 @@ import assert from "node:assert/strict";
 
 import {
   GOOGLE_SHEET_HEADERS,
+  GOOGLE_PROFILE_SHEET_HEADERS,
   GOOGLE_SHEET_REQUIRED_COLUMN_COUNT,
   buildSheetRowValues,
+  buildProfileSheetRowValues,
   buildSheetGridResizeRequests,
   planSheetSync,
 } from "../../server/google-sheet-sync.js";
@@ -110,4 +112,28 @@ test("buildSheetGridResizeRequests expands narrow template tabs before formattin
       fields: "gridProperties.columnCount,gridProperties.rowCount",
     },
   });
+});
+
+test("buildProfileSheetRowValues maps profile snapshot rows into the profile sheet order", () => {
+  const row = buildProfileSheetRowValues({
+    recordId: "profile-student-1",
+    recordType: "Profile",
+    studentId: "student-1",
+    studentName: "Ava Martinez",
+    status: "Active",
+    schoolYear: "2025-2026",
+    classCode: "R101",
+    band: "K-2",
+    gradeBand: "Grade 1",
+    currentWidaLevel: "2",
+    allotmentLevel: "2",
+    dailyAverageXpGoal: "80",
+    readingApps: "Amplify, Lexia",
+    languageApps: "Lalilo",
+    observationDate: "",
+  });
+
+  assert.equal(row.length, GOOGLE_PROFILE_SHEET_HEADERS.length);
+  assert.deepEqual(row.slice(0, 6), ["profile-student-1", "Profile", "student-1", "Ava Martinez", "Active", "2025-2026"]);
+  assert.equal(row[12], "Amplify, Lexia");
 });
