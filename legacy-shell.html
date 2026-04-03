@@ -363,10 +363,13 @@
 
             <section class="student-profile-tabs" id="studentProfileTabs">
               <button class="button button-secondary is-active" type="button" data-student-tab="profile">
-                Profile
+                Profile & Apps
               </button>
               <button class="button button-secondary" type="button" data-student-tab="log">
                 Intervention Data
+              </button>
+              <button class="button button-secondary" type="button" data-student-tab="sync">
+                Sheet Sync
               </button>
             </section>
 
@@ -397,6 +400,63 @@
               </section>
 
               <section id="dailyAccordion" class="accordion-list"></section>
+            </div>
+
+            <div id="studentSheetSyncSection" class="stack-md hidden">
+              <section class="card stack-md">
+                <div class="section-title-row">
+                  <div>
+                    <h3>Student Google Sheet Sync</h3>
+                    <p class="muted">
+                      Sync this student's profile, WIDA running record, and intervention data to the linked Google Sheet.
+                    </p>
+                  </div>
+                  <a
+                    class="button button-secondary"
+                    id="studentSyncOpenSheetLink"
+                    href="https://docs.google.com/spreadsheets/d/1BBFCU-FuQgb7VNDiTuotpbWGR0cdOTxJ3FxyRWd706A/edit?usp=drivesdk"
+                    rel="noreferrer"
+                    target="_blank"
+                  >
+                    Open Sheet
+                  </a>
+                </div>
+                <p class="field-note" id="studentSyncSummary">
+                  Sync the selected student into the shared spreadsheet.
+                </p>
+              </section>
+
+              <section class="card stack-md">
+                <form id="studentSyncForm" class="export-form">
+                  <label class="field">
+                    <span>Date Range Type</span>
+                    <select id="studentSyncRangeTypeSelect">
+                      <option value="week">Selected Week</option>
+                      <option value="custom">Custom Date Range</option>
+                    </select>
+                  </label>
+
+                  <div class="date-range-grid">
+                    <label class="field">
+                      <span>Week Start</span>
+                      <input id="studentSyncWeekStartInput" type="date" />
+                    </label>
+                    <label class="field hidden" id="studentSyncStartField">
+                      <span>Start Date</span>
+                      <input id="studentSyncStartDateInput" type="date" />
+                    </label>
+                    <label class="field hidden" id="studentSyncEndField">
+                      <span>End Date</span>
+                      <input id="studentSyncEndDateInput" type="date" />
+                    </label>
+                  </div>
+
+                  <button class="button button-primary button-lg" id="studentSyncSubmitButton" type="submit">
+                    Sync This Student
+                  </button>
+                </form>
+                <p id="studentSyncStatus" class="status-line"></p>
+              </section>
             </div>
           </section>
 

@@ -371,6 +371,7 @@ const dom = {
   studentProfileTabs: document.querySelector("#studentProfileTabs"),
   studentProfileDetailsSection: document.querySelector("#studentProfileDetailsSection"),
   studentInterventionSection: document.querySelector("#studentInterventionSection"),
+  studentSheetSyncSection: document.querySelector("#studentSheetSyncSection"),
   studentOverviewCard: document.querySelector("#studentOverviewCard"),
   studentGroupPanel: document.querySelector("#studentGroupPanel"),
   studentWidaPanel: document.querySelector("#studentWidaPanel"),
@@ -481,6 +482,17 @@ const dom = {
   exportSubmitButton: document.querySelector("#exportSubmitButton"),
   exportGoogleSheetSummary: document.querySelector("#exportGoogleSheetSummary"),
   openGoogleSheetExportLink: document.querySelector("#openGoogleSheetExportLink"),
+  studentSyncForm: document.querySelector("#studentSyncForm"),
+  studentSyncRangeTypeSelect: document.querySelector("#studentSyncRangeTypeSelect"),
+  studentSyncWeekStartInput: document.querySelector("#studentSyncWeekStartInput"),
+  studentSyncStartField: document.querySelector("#studentSyncStartField"),
+  studentSyncStartDateInput: document.querySelector("#studentSyncStartDateInput"),
+  studentSyncEndField: document.querySelector("#studentSyncEndField"),
+  studentSyncEndDateInput: document.querySelector("#studentSyncEndDateInput"),
+  studentSyncSubmitButton: document.querySelector("#studentSyncSubmitButton"),
+  studentSyncStatus: document.querySelector("#studentSyncStatus"),
+  studentSyncSummary: document.querySelector("#studentSyncSummary"),
+  studentSyncOpenSheetLink: document.querySelector("#studentSyncOpenSheetLink"),
   exportStatus: document.querySelector("#exportStatus"),
   analyticsFilterForm: document.querySelector("#analyticsFilterForm"),
   analyticsStudentSelect: document.querySelector("#analyticsStudentSelect"),
@@ -592,11 +604,13 @@ dom.openAddGroupButton.addEventListener("click", openGroupModal);
   dom.studentGrid.addEventListener("click", handleStudentGridClick);
   dom.backToHomeButton.addEventListener("click", () => switchScreen("students"));
   dom.studentStatusSelect.addEventListener("change", handleStudentStatusChange);
-  dom.studentProfileTabs.addEventListener("click", handleStudentProfileTabClick);
-  dom.studentOverviewCard.addEventListener("submit", handleStudentProfileConfigSubmit);
-  dom.studentOverviewCard.addEventListener("change", handleStudentOverviewChange);
-  dom.studentOverviewCard.addEventListener("click", handleStudentOverviewClick);
-  dom.studentGroupPanel.addEventListener("click", handleStudentGroupPanelClick);
+dom.studentProfileTabs.addEventListener("click", handleStudentProfileTabClick);
+dom.studentOverviewCard.addEventListener("submit", handleStudentProfileConfigSubmit);
+dom.studentOverviewCard.addEventListener("change", handleStudentOverviewChange);
+dom.studentOverviewCard.addEventListener("click", handleStudentOverviewClick);
+dom.studentSyncRangeTypeSelect.addEventListener("change", syncStudentSheetFields);
+dom.studentSyncForm.addEventListener("submit", handleStudentSheetSyncSubmit);
+dom.studentGroupPanel.addEventListener("click", handleStudentGroupPanelClick);
   dom.studentWidaPanel.addEventListener("submit", handleStudentWidaSubmit);
   dom.dailyAccordion.addEventListener("click", handleDailyAccordionClick);
   dom.openAddInterventionButton.addEventListener("click", openInterventionModalForSelectedStudent);
@@ -1367,9 +1381,12 @@ function getStudentWidaLogs(studentId) {
 }
 
 function syncStudentProfileTabUi() {
-  const isProfile = state.studentProfileTab !== "log";
+  const isProfile = state.studentProfileTab === "profile";
+  const isLog = state.studentProfileTab === "log";
+  const isSync = state.studentProfileTab === "sync";
   dom.studentProfileDetailsSection.classList.toggle("hidden", !isProfile);
-  dom.studentInterventionSection.classList.toggle("hidden", isProfile);
+  dom.studentInterventionSection.classList.toggle("hidden", !isLog);
+  dom.studentSheetSyncSection.classList.toggle("hidden", !isSync);
   dom.studentProfileTabs.querySelectorAll("[data-student-tab]").forEach((button) => {
     button.classList.toggle(
       "is-active",
@@ -3471,7 +3488,8 @@ function handleStudentProfileTabClick(event) {
   if (!button) {
     return;
   }
-  state.studentProfileTab = button.getAttribute("data-student-tab") === "log" ? "log" : "profile";
+  const tab = button.getAttribute("data-student-tab");
+  state.studentProfileTab = tab === "log" || tab === "sync" ? tab : "profile";
   syncStudentProfileTabUi();
 }
 
@@ -4901,6 +4919,22 @@ function syncExportDefaults() {
   dom.exportWeekStartInput.value = weekStart;
   dom.exportStartDateInput.value = weekStart;
   dom.exportEndDateInput.value = weekEnd;
+  dom.studentSyncWeekStartInput.value = weekStart;
+  dom.studentSyncStartDateInput.value = weekStart;
+  dom.studentSyncEndDateInput.value = weekEnd;
+}
+
+function syncStudentSheetFields() {
+  const student = getStudentById(state.selectedStudentId);
+  const exportCustomRange = dom.studentSyncRangeTypeSelect.value === "custom";
+  const sheetConfig = getGoogleSheetSyncConfig();
+  dom.studentSyncStartField.classList.toggle("hidden", !exportCustomRange);
+  dom.studentSyncEndField.classList.toggle("hidden", !exportCustomRange);
+  dom.studentSyncOpenSheetLink.href = sheetConfig.spreadsheetUrl || "#";
+  dom.studentSyncSummary.textContent = student
+    ? `Sync ${student.name}'s profile, WIDA entries, and intervention records to the linked Google Sheet.`
+    : "Select a student before syncing to the linked Google Sheet.";
+  dom.studentSyncSubmitButton.disabled = !student;
 }
 
 function syncExportFields() {
@@ -5000,6 +5034,55 @@ async function handleExportSubmit(event) {
   } catch (error) {
     console.error(error);
     setStatus(dom.exportStatus, readableError(error), "error");
+  }
+}
+
+async function handleStudentSheetSyncSubmit(event) {
+  event.preventDefault();
+  setStatus(dom.studentSyncStatus, "", "neutral");
+
+  try {
+    const student = getStudentById(state.selectedStudentId);
+    if (!student) {
+      throw new Error("Select a student before syncing.");
+    }
+
+    const rangeType = dom.studentSyncRangeTypeSelect.value;
+    const exportWeekStart = dom.studentSyncWeekStartInput.value
+      ? parseIsoDate(dom.studentSyncWeekStartInput.value)
+      : state.selectedWeekStart;
+    const startDate =
+      rangeType === "custom"
+        ? dom.studentSyncStartDateInput.value
+        : toIsoDate(getStartOfWeek(exportWeekStart));
+    const endDate =
+      rangeType === "custom"
+        ? dom.studentSyncEndDateInput.value
+        : toIsoDate(addDays(getStartOfWeek(exportWeekStart), 6));
+
+    if (!startDate || !endDate) {
+      throw new Error("Please choose a valid date range.");
+    }
+
+    const records = buildExportSheetRecords({
+      studentId: student.id,
+      startDate,
+      endDate,
+    });
+    const result = await syncExportToGoogleSheet({
+      records,
+      startDate,
+      endDate,
+    });
+
+    setStatus(
+      dom.studentSyncStatus,
+      `${student.name} synced to Google Sheet.${result?.message ? ` ${result.message}` : ""}`,
+      "success",
+    );
+  } catch (error) {
+    console.error(error);
+    setStatus(dom.studentSyncStatus, readableError(error), "error");
   }
 }
 
@@ -6163,6 +6246,7 @@ function renderStudentProfile() {
     dom.studentOverviewCard.innerHTML = `<div class="empty-state">No student selected.</div>`;
     renderStudentGroupPanel(null);
     renderStudentWidaPanel(null);
+    syncStudentSheetFields();
     syncStudentProfileTabUi();
     dom.dailyAccordion.innerHTML = "";
     return;
@@ -6276,6 +6360,7 @@ function renderStudentProfile() {
   `;
   renderStudentGroupPanel(student);
   renderStudentWidaPanel(student);
+  syncStudentSheetFields();
   syncStudentProfileTabUi();
 
   dom.weekRangeLabel.textContent = formatDateRange(

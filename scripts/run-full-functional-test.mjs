@@ -404,6 +404,13 @@ try {
     await waitForStatusText(page, "#studentStatusMessage", /inactive/i);
     await page.locator("#studentStatusSelect").selectOption("active");
     await waitForStatusText(page, "#studentStatusMessage", /active/i);
+    await page.locator('#studentProfileTabs [data-student-tab="sync"]').click();
+    await page.locator("#studentSheetSyncSection").waitFor({ state: "visible", timeout: 15000 });
+    const visibleStudentName = await page.locator("#studentProfileName").textContent();
+    await page.waitForFunction((expectedStudent) => {
+      const text = document.querySelector("#studentSyncSummary")?.textContent || "";
+      return expectedStudent ? text.includes(expectedStudent) : text.includes("profile");
+    }, visibleStudentName?.trim() || "");
     await page.locator('#studentProfileTabs [data-student-tab="profile"]').click();
   });
 

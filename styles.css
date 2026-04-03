@@ -18,6 +18,8 @@
   --radius-sm: 10px;
   --shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
   --container: 1400px;
+  --content-wide: 1220px;
+  --content-narrow: 1080px;
 }
 
 * {
@@ -164,6 +166,16 @@ textarea {
   gap: 20px;
 }
 
+#homeScreen,
+#studentsScreen,
+#studentProfileScreen,
+#settingsScreen,
+#exportScreen,
+#analyticsScreen {
+  width: min(100%, var(--content-wide));
+  margin-inline: auto;
+}
+
 .stack-sm {
   gap: 12px;
 }
@@ -246,6 +258,18 @@ textarea {
   align-items: center;
 }
 
+.screen-header > div,
+.section-title-row > div,
+.quick-add-header > div {
+  min-width: 0;
+}
+
+.screen-header .muted,
+.section-title-row .muted,
+.quick-add-header .muted {
+  max-width: 74ch;
+}
+
 .screen-version-footer {
   display: flex;
   justify-content: center;
@@ -294,6 +318,15 @@ textarea {
   flex-wrap: wrap;
   gap: 10px;
   margin-bottom: 16px;
+}
+
+#studentStatusMessage,
+#studentProfileTabs,
+#studentProfileDetailsSection,
+#studentInterventionSection,
+#studentSheetSyncSection {
+  width: 100%;
+  margin-inline: auto;
 }
 
 .profile-status-field {
@@ -999,6 +1032,12 @@ code {
 .profile-config-form {
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   align-items: end;
+}
+
+#studentSheetSyncSection .card,
+#exportScreen .card {
+  width: min(100%, var(--content-narrow));
+  margin-inline: auto;
 }
 
 .profile-app-management {
