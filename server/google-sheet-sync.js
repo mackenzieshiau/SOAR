@@ -90,6 +90,105 @@ function rowsEqual(left, right) {
   return left.every((value, index) => asString(value) === asString(right[index]));
 }
 
+function normalizeHeader(value) {
+  return asString(value).trim().toLowerCase();
+}
+
+export function sheetRowsToObjects(rows = [], headers = []) {
+  const normalizedHeaders = (Array.isArray(headers) ? headers : []).map((header) => asString(header));
+  if (!normalizedHeaders.length) {
+    return [];
+  }
+
+  const valueRows = Array.isArray(rows) ? rows : [];
+  const [firstRow = []] = valueRows;
+  const firstRowNormalized = firstRow.map(normalizeHeader);
+  const headerNormalized = normalizedHeaders.map(normalizeHeader);
+  const hasHeaderRow =
+    firstRowNormalized.length >= headerNormalized.length
+    && headerNormalized.every((header, index) => firstRowNormalized[index] === header);
+
+  return (hasHeaderRow ? valueRows.slice(1) : valueRows)
+    .filter((row) => Array.isArray(row) && row.some((value) => asString(value).trim()))
+    .map((row) =>
+      Object.fromEntries(
+        normalizedHeaders.map((header, index) => [header, asString(row[index])]),
+      ),
+    );
+}
+
+export function buildImportedStudentPayload({
+  logRows = [],
+  profileRows = [],
+} = {}) {
+  const logObjects = sheetRowsToObjects(logRows, GOOGLE_SHEET_HEADERS);
+  const profileObjects = sheetRowsToObjects(profileRows, GOOGLE_PROFILE_SHEET_HEADERS);
+
+  const profileRow = profileObjects.find(
+    (row) => normalizeHeader(row["Record Type"]) === "profile",
+  ) || null;
+  const widaRows = profileObjects.filter(
+    (row) => normalizeHeader(row["Record Type"]) === "wida observation",
+  );
+  const interventionRows = logObjects.filter(
+    (row) => normalizeHeader(row["Record Type"] || "Intervention") === "intervention",
+  );
+
+  return {
+    studentProfile: profileRow
+      ? {
+          recordId: profileRow["Record ID"],
+          studentId: profileRow["Student ID"],
+          studentName: profileRow["Student Name"],
+          status: profileRow.Status,
+          schoolYear: profileRow["School Year"],
+          classCode: profileRow["Class Code"],
+          band: profileRow.Band,
+          gradeBand: profileRow["Grade Band"],
+          currentWidaLevel: profileRow["Current WIDA Level"],
+          allotmentLevel: profileRow["Allotment Level"],
+          dailyAverageXpGoal: profileRow["Daily Average XP Goal"],
+          readingApps: profileRow["Reading Apps"],
+          languageApps: profileRow["Language Apps"],
+          fastMathApps: profileRow["Fast Math Apps"],
+          mathApps: profileRow["Math Apps"],
+          otherApps: profileRow["Other Apps"],
+          "Reading Apps": profileRow["Reading Apps"],
+          "Language Apps": profileRow["Language Apps"],
+          "Fast Math Apps": profileRow["Fast Math Apps"],
+          "Math Apps": profileRow["Math Apps"],
+          "Other Apps": profileRow["Other Apps"],
+          lastUpdated: profileRow["Last Updated"],
+        }
+      : {},
+    interventions: interventionRows.map((row) => ({
+      id: row["Record ID"],
+      date: row.Date,
+      timestamp: row.Timestamp,
+      teacherName: row["Teacher Name"],
+      groupName: row["Group Name"],
+      contentAreaName: row["Content Area"],
+      appName: row.App,
+      interventionCategory: row["Intervention Category"],
+      taskDetail: row["Task Detail"],
+      xpAwarded: row["XP Awarded"],
+      notes: row.Notes,
+      evidenceOfProduction: row["Evidence Of Production"],
+      repeatedInNewContext: row["Repeated In New Context"],
+      newContextNote: row["New Context Note"],
+    })),
+    widaLogs: widaRows.map((row) => ({
+      id: row["Record ID"],
+      date: row["Observation Date"],
+      domain: row["WIDA Domain"],
+      level: row["WIDA Entry Level"],
+      justification: row["WIDA Justification"],
+      notes: row["WIDA Notes"],
+      createdAt: row["Last Updated"],
+    })),
+  };
+}
+
 export function buildSheetRowValues(row = {}) {
   return [
     asString(row.recordId),
@@ -322,6 +421,35 @@ async function readSheetRowsWithHeaders(sheets, spreadsheetId, title, headers) {
     }
     throw error;
   }
+}
+
+async function importStudentSheetPayload(sheets, spreadsheetId, payload = {}) {
+  const logSheetName = asString(payload?.logSheetName).trim();
+  const profileSheetName = asString(payload?.profileSheetName).trim();
+
+  if (!logSheetName && !profileSheetName) {
+    throw new Error("Linked Google Sheet tab names are missing for student import.");
+  }
+
+  const logRows = logSheetName
+    ? await readSheetRowsWithHeaders(sheets, spreadsheetId, logSheetName, GOOGLE_SHEET_HEADERS)
+    : [];
+  const profileRows = profileSheetName
+    ? await readSheetRowsWithHeaders(sheets, spreadsheetId, profileSheetName, GOOGLE_PROFILE_SHEET_HEADERS)
+    : [];
+
+  const imported = buildImportedStudentPayload({ logRows, profileRows });
+  if (!Object.keys(imported.studentProfile || {}).length && !imported.interventions.length && !imported.widaLogs.length) {
+    throw new Error("No student data was found in the linked Google Sheet.");
+  }
+
+  return {
+    spreadsheetId,
+    logSheetName,
+    profileSheetName,
+    ...imported,
+    message: `${imported.interventions.length} intervention row${imported.interventions.length === 1 ? "" : "s"} and ${imported.widaLogs.length} WIDA observation${imported.widaLogs.length === 1 ? "" : "s"} imported.`,
+  };
 }
 
 function buildFormatRequests(sheetId, rowCount, finalRows, removedCount, headers) {
@@ -599,7 +727,11 @@ export async function createGoogleSheetSyncResponse({ method, body, env = proces
 
   try {
     const payload = parseRequestBody(body);
-    const result = await syncGoogleSheetPayload(payload, env);
+    const spreadsheetId = getSpreadsheetId(env, payload);
+    const result =
+      payload?.action === "import-student"
+        ? await importStudentSheetPayload(await createSheetsClient(env), spreadsheetId, payload)
+        : await syncGoogleSheetPayload(payload, env);
     return {
       status: 200,
       body: { ok: true, ...result },

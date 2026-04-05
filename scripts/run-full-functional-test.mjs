@@ -406,6 +406,10 @@ try {
     await waitForStatusText(page, "#studentStatusMessage", /active/i);
     await page.locator('#studentProfileTabs [data-student-tab="sync"]').click();
     await page.locator("#studentSheetSyncSection").waitFor({ state: "visible", timeout: 15000 });
+    await page.getByRole("button", { name: "Sync From Google Sheet" }).waitFor({
+      state: "visible",
+      timeout: 15000,
+    });
     const visibleStudentName = await page.locator("#studentProfileName").textContent();
     await page.waitForFunction((expectedStudent) => {
       const text = document.querySelector("#studentSyncSummary")?.textContent || "";

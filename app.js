@@ -6,6 +6,7 @@ import {
   buildQuickAddEvidenceText,
   buildGoogleSheetSyncPayload,
   buildStudentSheetTabs,
+  PROFILE_SHEET_APP_SECTIONS,
   createQuickLinkAction,
   createQuickLinkDraft,
   getQuickAddEvidenceTemplate,
@@ -490,6 +491,7 @@ const dom = {
   studentSyncEndField: document.querySelector("#studentSyncEndField"),
   studentSyncEndDateInput: document.querySelector("#studentSyncEndDateInput"),
   studentSyncSubmitButton: document.querySelector("#studentSyncSubmitButton"),
+  studentImportSubmitButton: document.querySelector("#studentImportSubmitButton"),
   studentSyncStatus: document.querySelector("#studentSyncStatus"),
   studentSyncSummary: document.querySelector("#studentSyncSummary"),
   studentSyncOpenSheetLink: document.querySelector("#studentSyncOpenSheetLink"),
@@ -610,6 +612,7 @@ dom.studentOverviewCard.addEventListener("change", handleStudentOverviewChange);
 dom.studentOverviewCard.addEventListener("click", handleStudentOverviewClick);
 dom.studentSyncRangeTypeSelect.addEventListener("change", syncStudentSheetFields);
 dom.studentSyncForm.addEventListener("submit", handleStudentSheetSyncSubmit);
+dom.studentImportSubmitButton.addEventListener("click", handleStudentSheetImportClick);
 dom.studentGroupPanel.addEventListener("click", handleStudentGroupPanelClick);
   dom.studentWidaPanel.addEventListener("submit", handleStudentWidaSubmit);
   dom.dailyAccordion.addEventListener("click", handleDailyAccordionClick);
@@ -4935,6 +4938,7 @@ function syncStudentSheetFields() {
     ? `Sync ${student.name}'s profile, WIDA entries, and intervention records to the linked Google Sheet.`
     : "Select a student before syncing to the linked Google Sheet.";
   dom.studentSyncSubmitButton.disabled = !student;
+  dom.studentImportSubmitButton.disabled = !student;
 }
 
 function syncExportFields() {
@@ -5080,6 +5084,182 @@ async function handleStudentSheetSyncSubmit(event) {
     setStatus(
       dom.studentSyncStatus,
       `${student.name} synced to Google Sheet.${result?.message ? ` ${result.message}` : ""}`,
+      "success",
+    );
+  } catch (error) {
+    console.error(error);
+    setStatus(dom.studentSyncStatus, readableError(error), "error");
+  }
+}
+
+function findContentAreaByName(name) {
+  const normalizedTarget = normalizeLabel(name);
+  return (
+    state.data.contentAreas.find((contentArea) => normalizeLabel(contentArea.name) === normalizedTarget)
+    || null
+  );
+}
+
+async function findOrCreateImportedApp(contentAreaId, appName) {
+  const normalizedTarget = normalizeLabel(appName);
+  let app = state.data.apps.find(
+    (item) =>
+      item.contentAreaId === contentAreaId
+      && normalizeLabel(item.name) === normalizedTarget,
+  ) || null;
+
+  if (!app) {
+    app = await state.service.saveApp({
+      name: String(appName || "").trim(),
+      contentAreaId,
+      active: true,
+    });
+    state.data.apps.push(app);
+  } else if (!app.active) {
+    app = await state.service.saveApp({
+      ...app,
+      active: true,
+    });
+    const appIndex = state.data.apps.findIndex((item) => item.id === app.id);
+    if (appIndex >= 0) {
+      state.data.apps[appIndex] = app;
+    }
+  }
+
+  return app;
+}
+
+async function applyImportedStudentSheetPayload(student, payload) {
+  if (!student) {
+    throw new Error("Select a student before importing.");
+  }
+
+  const profile = payload?.studentProfile || {};
+  const nextStatus = String(
+    profile.status || (student.active ? "Active" : "Inactive"),
+  ).trim().toLowerCase();
+  await state.service.saveStudent({
+    ...student,
+    name: String(profile.studentName || student.name).trim() || student.name,
+    band: String(profile.band || student.band).trim() || student.band,
+    gradeBand: String(profile.gradeBand || student.gradeBand).trim() || student.gradeBand,
+    widaLevel: String(profile.currentWidaLevel || student.widaLevel).trim() || student.widaLevel,
+    schoolYear: String(profile.schoolYear || student.schoolYear || "").trim(),
+    classCode: String(profile.classCode || student.classCode || "").trim(),
+    allotmentLevel: String(profile.allotmentLevel || student.allotmentLevel || student.widaLevel).trim(),
+    dailyAverageXpGoal: Number(profile.dailyAverageXpGoal || student.dailyAverageXpGoal),
+    active: nextStatus !== "inactive",
+  });
+
+  const existingAssignments = getAssignmentsForStudent(student.id).filter((assignment) => assignment.active);
+  for (const assignment of existingAssignments) {
+    await state.service.setStudentAppAssignment(student.id, assignment.appId, false);
+  }
+
+  for (const section of PROFILE_SHEET_APP_SECTIONS) {
+    const rawValue = String(payload?.studentProfile?.[section.label] || "").trim();
+    if (!rawValue) {
+      continue;
+    }
+    const contentArea = getContentAreaById(section.contentAreaId) || findContentAreaByName(section.label.replace(/ Apps$/i, ""));
+    if (!contentArea) {
+      continue;
+    }
+    const appNames = rawValue
+      .split(",")
+      .map((value) => value.trim())
+      .filter(Boolean);
+    for (const appName of appNames) {
+      const app = await findOrCreateImportedApp(contentArea.id, appName);
+      await state.service.setStudentAppAssignment(student.id, app.id, true);
+    }
+  }
+
+  for (const entry of Array.isArray(payload?.widaLogs) ? payload.widaLogs : []) {
+    await state.service.saveWidaLog({
+      id: entry.id,
+      studentId: student.id,
+      date: entry.date,
+      domain: entry.domain,
+      level: entry.level,
+      justification: entry.justification,
+      notes: entry.notes,
+      createdAt: entry.createdAt,
+    });
+  }
+
+  for (const entry of Array.isArray(payload?.interventions) ? payload.interventions : []) {
+    const contentArea = findContentAreaByName(entry.contentAreaName || "Other")
+      || findContentAreaByName("Other")
+      || state.data.contentAreas[0];
+    if (!contentArea) {
+      continue;
+    }
+    const app = entry.appName
+      ? await findOrCreateImportedApp(contentArea.id, entry.appName)
+      : null;
+
+    await state.service.saveIntervention({
+      id: entry.id,
+      studentId: student.id,
+      date: entry.date,
+      timestamp: entry.timestamp,
+      teacherName: entry.teacherName || "",
+      contentAreaId: contentArea.id,
+      appId: app?.id || state.data.apps.find((item) => item.contentAreaId === contentArea.id)?.id || "",
+      interventionCategory: entry.interventionCategory || "",
+      taskDetail: entry.taskDetail || "",
+      xpAwarded: Number(entry.xpAwarded || 0),
+      notes: entry.notes || "",
+      evidenceOfProduction: entry.evidenceOfProduction || "",
+      repeatedInNewContext: String(entry.repeatedInNewContext || "").trim().toLowerCase() === "yes",
+      newContextNote: entry.newContextNote || "",
+      overrideNote: entry.overrideNote || "",
+      groupName: entry.groupName || "",
+      createdAt: entry.timestamp || new Date().toISOString(),
+    });
+  }
+}
+
+async function handleStudentSheetImportClick() {
+  setStatus(dom.studentSyncStatus, "", "neutral");
+
+  try {
+    const student = getStudentById(state.selectedStudentId);
+    if (!student) {
+      throw new Error("Select a student before syncing.");
+    }
+
+    const [tab] = buildStudentSheetTabs([student]);
+    if (!tab) {
+      throw new Error("Unable to resolve the linked Google Sheet tabs for this student.");
+    }
+
+    const sheetConfig = getGoogleSheetSyncConfig();
+    const response = await fetch(sheetConfig.syncEndpointUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        action: "import-student",
+        spreadsheetId: sheetConfig.spreadsheetId,
+        logSheetName: tab.sheetName,
+        profileSheetName: `${tab.sheetName} Profile`,
+      }),
+    });
+
+    const responseText = await response.text();
+    const payload = responseText ? JSON.parse(responseText) : {};
+    if (!response.ok || payload?.ok === false) {
+      throw new Error(payload?.error || `Sheet import failed with status ${response.status}.`);
+    }
+
+    await applyImportedStudentSheetPayload(student, payload);
+    await refreshData();
+    setStatus(
+      dom.studentSyncStatus,
+      `${student.name} updated from the linked Google Sheet.`,
       "success",
     );
   } catch (error) {
