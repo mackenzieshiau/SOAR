@@ -257,6 +257,14 @@ function createGroupDraft() {
   };
 }
 
+function createInterventionStudentDraft() {
+  return {
+    selectedStudentIds: [],
+    query: "",
+    lockedToSingleStudent: false,
+  };
+}
+
 function createSession(role = "teacher", displayName = "Shared Access", options = {}) {
   return {
     role,
@@ -302,9 +310,13 @@ const state = {
   quickAdd: createQuickAddState(),
   groupDraft: createGroupDraft(),
   quickLinkDraft: createQuickLinkDraft(),
+  interventionStudentDraft: createInterventionStudentDraft(),
   interventionEvidenceSelections: [],
   interventionEvidenceDetails: "",
   resumeQuickLinkModalAfterGroupSave: false,
+  isExportSyncing: false,
+  isStudentSheetSyncing: false,
+  isStudentSheetImporting: false,
   session: null,
 };
 
@@ -422,11 +434,17 @@ const dom = {
   createQuickLinkGroupButton: document.querySelector("#createQuickLinkGroupButton"),
   quickLinkActionsContainer: document.querySelector("#quickLinkActionsContainer"),
   interventionStudentInput: document.querySelector("#interventionStudentInput"),
+  interventionStudentDisplay: document.querySelector("#interventionStudentDisplay"),
+  interventionStudentSearchInput: document.querySelector("#interventionStudentSearchInput"),
+  interventionStudentSuggestions: document.querySelector("#interventionStudentSuggestions"),
+  interventionSelectedStudents: document.querySelector("#interventionSelectedStudents"),
   interventionDateInput: document.querySelector("#interventionDateInput"),
   interventionTeacherInput: document.querySelector("#interventionTeacherInput"),
   interventionContentAreaInput: document.querySelector("#interventionContentAreaInput"),
   interventionAppInput: document.querySelector("#interventionAppInput"),
   interventionCategoryInput: document.querySelector("#interventionCategoryInput"),
+  interventionCustomCategoryField: document.querySelector("#interventionCustomCategoryField"),
+  interventionCustomCategoryInput: document.querySelector("#interventionCustomCategoryInput"),
   interventionTaskDetailInput: document.querySelector("#interventionTaskDetailInput"),
   interventionXpInput: document.querySelector("#interventionXpInput"),
   interventionNotesInput: document.querySelector("#interventionNotesInput"),
@@ -652,18 +670,15 @@ dom.groupDeleteButton.addEventListener("click", handleGroupDeleteClick);
   dom.quickLinkActionsContainer.addEventListener("input", handleQuickLinkActionsInput);
   dom.quickLinkActionsContainer.addEventListener("change", handleQuickLinkActionsInput);
   dom.quickLinkGrid.addEventListener("click", handleQuickLinkGridClick);
-  dom.interventionContentAreaInput.addEventListener("change", updateInterventionAppOptions);
-  dom.interventionStudentInput.addEventListener("change", updateInterventionAppOptions);
-  dom.interventionStudentInput.addEventListener("change", updateInterventionCapSummary);
+  dom.interventionContentAreaInput.addEventListener("change", handleInterventionContentAreaChange);
   dom.interventionDateInput.addEventListener("change", updateInterventionCapSummary);
   dom.interventionContentAreaInput.addEventListener("change", updateInterventionCapSummary);
   dom.interventionXpInput.addEventListener("input", updateInterventionCapSummary);
-  dom.interventionCategoryInput.addEventListener("input", syncInterventionEvidenceChecklist);
-  dom.interventionCategoryInput.addEventListener("input", updateInterventionCapSummary);
+  dom.interventionCategoryInput.addEventListener("change", handleInterventionCategoryChange);
+  dom.interventionCustomCategoryInput.addEventListener("input", handleInterventionCustomCategoryInput);
   dom.interventionEvidenceChecklist.addEventListener("change", handleInterventionEvidenceChecklistChange);
   dom.interventionEvidenceInput.addEventListener("input", handleInterventionEvidenceInput);
   dom.interventionOverrideNoteInput.addEventListener("input", updateInterventionCapSummary);
-  dom.interventionRepeatedInput.addEventListener("change", syncNewContextField);
   dom.adminPasswordForm.addEventListener("submit", handleAdminPasswordSubmit);
   dom.guideForm.addEventListener("submit", handleGuideSubmit);
   dom.resetGuideButton.addEventListener("click", resetGuideForm);
@@ -2457,7 +2472,7 @@ function legacyBuildInterventionCapSummary2() {
     student,
     date: dom.interventionDateInput.value,
     contentAreaId: dom.interventionContentAreaInput.value,
-    interventionCategory: dom.interventionCategoryInput.value,
+    interventionCategory: getInterventionCategoryName(),
     proposedXp,
   });
 }
@@ -3761,15 +3776,150 @@ function handleGroupSelectedStudentClick(event) {
   renderGroupDraft();
 }
 
+function syncInterventionStudentInputValue() {
+  const activeStudents = getActiveStudents();
+  const options = activeStudents
+    .map(
+      (student) =>
+        `<option value="${escapeHtml(student.id)}">${escapeHtml(student.name)}</option>`,
+    )
+    .join("");
+  dom.interventionStudentInput.innerHTML = options;
+
+  const validStudentIds = new Set(activeStudents.map((student) => student.id));
+  state.interventionStudentDraft.selectedStudentIds = state.interventionStudentDraft.selectedStudentIds.filter(
+    (studentId) => validStudentIds.has(studentId),
+  );
+
+  const selectedId = state.interventionStudentDraft.selectedStudentIds[0] || "";
+  if (selectedId && activeStudents.some((student) => student.id === selectedId)) {
+    dom.interventionStudentInput.value = selectedId;
+  } else {
+    dom.interventionStudentInput.value = "";
+  }
+}
+
+function renderInterventionStudentPicker() {
+  const selectedStudents = state.interventionStudentDraft.selectedStudentIds
+    .map((studentId) => getStudentById(studentId))
+    .filter(Boolean);
+  const suggestions = state.interventionStudentDraft.lockedToSingleStudent
+    ? []
+    : getStudentSuggestions(
+        state.interventionStudentDraft.query,
+        state.interventionStudentDraft.selectedStudentIds,
+        state.interventionStudentDraft.query ? 8 : 6,
+      );
+
+  dom.interventionStudentSearchInput.value = state.interventionStudentDraft.query;
+  dom.interventionStudentDisplay.value = selectedStudents[0]
+    ? `${selectedStudents[0].name} (${selectedStudents[0].classCode || "No class code"})`
+    : "";
+  dom.interventionStudentSearchInput.disabled = state.interventionStudentDraft.lockedToSingleStudent;
+  dom.interventionStudentSearchInput.placeholder = state.interventionStudentDraft.lockedToSingleStudent
+    ? "Student is fixed while editing this entry"
+    : "Search students to add";
+  dom.interventionStudentSuggestions.innerHTML = state.interventionStudentDraft.lockedToSingleStudent
+    ? `<div class="empty-inline">Editing keeps this intervention attached to its current student.</div>`
+    : suggestions.length
+      ? suggestions
+          .map(
+            (student) => `
+              <button class="suggestion-chip" type="button" data-action="add-intervention-student" data-student-id="${escapeHtml(student.id)}">
+                <span>${escapeHtml(student.name)}</span>
+                <small>${escapeHtml(`${student.classCode || "No code"} | ${student.band} | ${student.gradeBand}`)}</small>
+              </button>
+            `,
+          )
+          .join("")
+      : `<div class="empty-inline">No matching students.</div>`;
+  dom.interventionSelectedStudents.innerHTML = selectedStudents.length
+    ? selectedStudents
+        .map(
+          (student, index) => `
+            <div class="selected-student-chip">
+              <div>
+                <strong>${escapeHtml(student.name)}</strong>
+                <small>${escapeHtml(`${student.classCode || "No code"} | ${student.band} | ${student.gradeBand}`)}</small>
+              </div>
+              ${
+                state.interventionStudentDraft.lockedToSingleStudent
+                  ? `<span class="inline-badge">Locked</span>`
+                  : `<button class="icon-button" type="button" data-action="remove-intervention-student" data-student-id="${escapeHtml(student.id)}" ${selectedStudents.length === 1 && index === 0 ? "aria-label=\"Remove student\"" : ""}>x</button>`
+              }
+            </div>
+          `,
+        )
+        .join("")
+    : `<div class="empty-inline">Add at least one student.</div>`;
+
+  syncInterventionStudentInputValue();
+}
+
+function handleInterventionStudentSearchInput(event) {
+  state.interventionStudentDraft.query = event.target.value;
+  renderInterventionStudentPicker();
+}
+
+function handleInterventionStudentSuggestionClick(event) {
+  const button = event.target.closest("[data-action='add-intervention-student']");
+  if (!button || state.interventionStudentDraft.lockedToSingleStudent) {
+    return;
+  }
+  const studentId = button.getAttribute("data-student-id");
+  if (!studentId || state.interventionStudentDraft.selectedStudentIds.includes(studentId)) {
+    return;
+  }
+  state.interventionStudentDraft.selectedStudentIds = [
+    ...state.interventionStudentDraft.selectedStudentIds,
+    studentId,
+  ];
+  state.interventionStudentDraft.query = "";
+  renderInterventionStudentPicker();
+  updateInterventionAppOptions();
+  updateInterventionCapSummary();
+}
+
+function handleInterventionSelectedStudentClick(event) {
+  const button = event.target.closest("[data-action='remove-intervention-student']");
+  if (!button || state.interventionStudentDraft.lockedToSingleStudent) {
+    return;
+  }
+  const studentId = button.getAttribute("data-student-id");
+  state.interventionStudentDraft.selectedStudentIds = state.interventionStudentDraft.selectedStudentIds.filter(
+    (currentId) => currentId !== studentId,
+  );
+  renderInterventionStudentPicker();
+  updateInterventionAppOptions();
+  updateInterventionCapSummary();
+}
+
 async function handleStudentSubmit(event) {
   event.preventDefault();
+  const classCode = dom.studentClassCodeInput.value.trim();
+  const studentName = dom.studentNameInput.value.trim();
+  if (!classCode) {
+    dom.studentClassCodeInput.focus();
+    window.alert("Class code is required before saving a student.");
+    return;
+  }
+  const duplicateStudent = state.data.students.find((student) =>
+    student.id !== (dom.studentIdInput.value || "")
+    && normalizeLabel(student.name) === normalizeLabel(studentName)
+    && normalizeLabel(student.classCode) === normalizeLabel(classCode)
+  );
+  if (duplicateStudent) {
+    dom.studentClassCodeInput.focus();
+    window.alert("A student with this name and class code already exists.");
+    return;
+  }
 
   try {
     const savedStudent = await state.service.saveStudent({
       id: dom.studentIdInput.value || undefined,
-      name: dom.studentNameInput.value,
+      name: studentName,
       schoolYear: dom.studentSchoolYearInput.value,
-      classCode: dom.studentClassCodeInput.value,
+      classCode,
       band: dom.studentBandInput.value,
       gradeBand: dom.studentGradeBandInput.value,
       widaLevel: dom.studentWidaInput.value,
@@ -4409,8 +4559,15 @@ function clearQuickAddStatus() {
   setStatus(dom.quickAddStatus, "", "neutral");
 }
 
+function getCurrentProfileStudentId() {
+  const profileStudentId = String(
+    dom.studentOverviewCard?.querySelector('input[name="studentId"]')?.value || "",
+  ).trim();
+  return profileStudentId || state.selectedStudentId || "";
+}
+
 function openInterventionModalForSelectedStudent() {
-  openInterventionModal(state.selectedStudentId);
+  openInterventionModal(getCurrentProfileStudentId());
 }
 
 function buildInterventionTimestamp(dateValue, existingTimestamp = "") {
@@ -4426,7 +4583,14 @@ function buildInterventionTimestamp(dateValue, existingTimestamp = "") {
 }
 
 function getInterventionEvidenceTemplate() {
-  return getQuickAddEvidenceTemplate(dom.interventionCategoryInput.value);
+  return getQuickAddEvidenceTemplate(getInterventionCategoryName());
+}
+
+function getInterventionCategoryName() {
+  if (dom.interventionCategoryInput.value === QUICK_ADD_CUSTOM_VALUE) {
+    return String(dom.interventionCustomCategoryInput.value || "").trim();
+  }
+  return String(dom.interventionCategoryInput.value || "").trim();
 }
 
 function deriveInterventionEvidenceSelections(evidenceText, templateOptions) {
@@ -4467,7 +4631,7 @@ function syncInterventionEvidenceInputValue() {
     validSelections,
     state.interventionEvidenceDetails,
     dom.interventionNotesInput.value,
-    dom.interventionCategoryInput.value,
+    getInterventionCategoryName(),
   );
 }
 
@@ -4548,19 +4712,69 @@ function handleInterventionEvidenceInput() {
   );
 }
 
+function updateInterventionCategoryOptions(selectedValue = "", customValue = "") {
+  const options = getQuickAddInterventionOptions(dom.interventionContentAreaInput.value);
+  const selectOptions = options.length
+    ? [
+        `<option value="">Select an intervention</option>`,
+        ...options.map(
+          (option) => `<option value="${escapeHtml(option)}">${escapeHtml(option)}</option>`,
+        ),
+        `<option value="${QUICK_ADD_CUSTOM_VALUE}">Custom Intervention</option>`,
+      ]
+    : [
+        `<option value="">Select an intervention</option>`,
+        `<option value="${QUICK_ADD_CUSTOM_VALUE}">Custom Intervention</option>`,
+      ];
+  dom.interventionCategoryInput.innerHTML = selectOptions.join("");
+
+  const hasPresetOption = options.includes(selectedValue);
+  dom.interventionCategoryInput.value = hasPresetOption
+    ? selectedValue
+    : selectedValue || customValue
+      ? QUICK_ADD_CUSTOM_VALUE
+      : "";
+  dom.interventionCustomCategoryInput.value = hasPresetOption ? "" : (customValue || selectedValue || "");
+  dom.interventionCustomCategoryField.classList.toggle(
+    "hidden",
+    dom.interventionCategoryInput.value !== QUICK_ADD_CUSTOM_VALUE,
+  );
+  dom.interventionTaskDetailInput.value = getInterventionCategoryName();
+}
+
+function handleInterventionCategoryChange() {
+  updateInterventionCategoryOptions(
+    dom.interventionCategoryInput.value === QUICK_ADD_CUSTOM_VALUE ? "" : dom.interventionCategoryInput.value,
+    dom.interventionCategoryInput.value === QUICK_ADD_CUSTOM_VALUE ? dom.interventionCustomCategoryInput.value : "",
+  );
+  syncInterventionEvidenceChecklist();
+  updateInterventionCapSummary();
+}
+
+function handleInterventionCustomCategoryInput() {
+  dom.interventionTaskDetailInput.value = getInterventionCategoryName();
+  syncInterventionEvidenceChecklist();
+  updateInterventionCapSummary();
+}
+
+function handleInterventionContentAreaChange() {
+  updateInterventionCategoryOptions();
+  updateInterventionAppOptions();
+  updateInterventionCapSummary();
+}
+
 function openInterventionModal(studentId = null, interventionId = "") {
   dom.interventionForm.reset();
   const record = state.data.interventions.find((item) => item.id === interventionId) || null;
-  populateStudentOptions(record?.studentId || studentId);
+  const lockedStudentId = record?.studentId || studentId || state.selectedStudentId || "";
+  populateStudentOptions(lockedStudentId ? [lockedStudentId] : [], true);
   populateContentAreaOptions();
   dom.interventionIdInput.value = record?.id || "";
   dom.interventionDateInput.value = record?.date || toIsoDate(new Date());
   dom.interventionTeacherInput.value = record?.teacherName || getDefaultTeacherName();
-  dom.interventionRepeatedInput.value = record?.repeatedInNewContext ? "true" : "false";
+  dom.interventionRepeatedInput.value = "false";
   dom.interventionOverrideNoteInput.value = record?.overrideNote || "";
-  dom.interventionCategoryInput.value = record?.interventionCategory || "";
-  dom.interventionTaskDetailInput.value = record?.taskDetail || "";
-  dom.interventionXpInput.value = record ? String(record.xpAwarded) : "";
+  dom.interventionXpInput.value = record ? String(record.xpAwarded) : "2";
   dom.interventionNotesInput.value = record?.notes || "";
   dom.interventionEvidenceInput.value = record?.evidenceOfProduction || "";
   const templateOptions = getQuickAddEvidenceTemplate(record?.interventionCategory || "").options;
@@ -4572,17 +4786,12 @@ function openInterventionModal(studentId = null, interventionId = "") {
     record?.evidenceOfProduction || "",
     templateOptions,
   );
-  dom.interventionNewContextInput.value = record?.newContextNote || "";
-  if (record?.contentAreaId) {
-    dom.interventionContentAreaInput.value = record.contentAreaId;
-  }
-  syncNewContextField();
+  dom.interventionNewContextInput.value = "";
+  dom.interventionContentAreaInput.value = record?.contentAreaId || "";
+  updateInterventionCategoryOptions(record?.interventionCategory || "", record?.interventionCategory || "");
   renderInterventionEvidenceChecklist();
   syncInterventionEvidenceInputValue();
-  updateInterventionAppOptions();
-  if (record?.appId) {
-    dom.interventionAppInput.value = record.appId;
-  }
+  updateInterventionAppOptions(record?.appId || "");
   updateInterventionCapSummary();
   dom.interventionModal.showModal();
 }
@@ -4595,17 +4804,19 @@ function handleDailyAccordionClick(event) {
   openInterventionModal(state.selectedStudentId, editButton.getAttribute("data-intervention-id"));
 }
 
-function syncNewContextField() {
-  const repeated = dom.interventionRepeatedInput.value === "true";
-  dom.newContextNoteField.classList.toggle("hidden", !repeated);
-  dom.interventionNewContextInput.required = repeated;
-  if (!repeated) {
-    dom.interventionNewContextInput.value = "";
-  }
-}
-
 async function handleInterventionSubmit(event) {
   event.preventDefault();
+  const targetStudentId = state.interventionStudentDraft.selectedStudentIds[0] || "";
+  if (!targetStudentId) {
+    window.alert("Choose a student before saving an intervention.");
+    return;
+  }
+  const interventionCategory = getInterventionCategoryName();
+  if (!interventionCategory) {
+    dom.interventionCategoryInput.focus();
+    window.alert("Choose an intervention category before saving.");
+    return;
+  }
 
   const assessment = buildInterventionCapSummary();
   if (assessment?.isHardWarning && assessment.color === "red") {
@@ -4639,34 +4850,36 @@ async function handleInterventionSubmit(event) {
   }
 
   try {
+    const existingRecord = state.data.interventions.find((item) => item.id === dom.interventionIdInput.value) || null;
+    const evidenceOfProduction = buildInterventionEvidenceText(
+      state.interventionEvidenceSelections,
+      dom.interventionEvidenceInput.value,
+      dom.interventionNotesInput.value,
+      interventionCategory,
+    );
     await state.service.saveIntervention({
-      id: dom.interventionIdInput.value || undefined,
-      studentId: dom.interventionStudentInput.value,
+      id: existingRecord?.id || undefined,
+      studentId: targetStudentId,
       date: dom.interventionDateInput.value,
       timestamp: buildInterventionTimestamp(
         dom.interventionDateInput.value,
-        state.data.interventions.find((item) => item.id === dom.interventionIdInput.value)?.timestamp || "",
+        existingRecord?.timestamp || "",
       ),
       teacherName: dom.interventionTeacherInput.value,
       contentAreaId: dom.interventionContentAreaInput.value,
       appId: dom.interventionAppInput.value,
-      interventionCategory: dom.interventionCategoryInput.value,
-      taskDetail: dom.interventionTaskDetailInput.value,
+      interventionCategory,
+      taskDetail: interventionCategory,
       xpAwarded: Number(dom.interventionXpInput.value),
       notes: dom.interventionNotesInput.value,
-      evidenceOfProduction: buildInterventionEvidenceText(
-        state.interventionEvidenceSelections,
-        dom.interventionEvidenceInput.value,
-        dom.interventionNotesInput.value,
-        dom.interventionCategoryInput.value,
-      ),
-      repeatedInNewContext: dom.interventionRepeatedInput.value === "true",
-      newContextNote: dom.interventionNewContextInput.value,
+      evidenceOfProduction,
+      repeatedInNewContext: false,
+      newContextNote: "",
       overrideNote: dom.interventionOverrideNoteInput.value.trim(),
-      groupName: state.data.interventions.find((item) => item.id === dom.interventionIdInput.value)?.groupName || "",
+      groupName: existingRecord?.groupName || "",
     });
 
-    state.selectedStudentId = dom.interventionStudentInput.value;
+    state.selectedStudentId = targetStudentId;
     dom.interventionModal.close();
     await refreshData();
     switchScreen("student");
@@ -4676,7 +4889,7 @@ async function handleInterventionSubmit(event) {
   }
 }
 
-function populateStudentOptions(selectedId = state.selectedStudentId) {
+function populateStudentOptions(selectedIds = state.selectedStudentId ? [state.selectedStudentId] : [], lockToSingleStudent = false) {
   const activeStudents = getActiveStudents();
   const options = activeStudents
     .map(
@@ -4685,12 +4898,18 @@ function populateStudentOptions(selectedId = state.selectedStudentId) {
     )
     .join("");
 
-  dom.interventionStudentInput.innerHTML = options;
   dom.assignmentStudentSelect.innerHTML = options;
-
-  if (selectedId && activeStudents.some((student) => student.id === selectedId)) {
-    dom.interventionStudentInput.value = selectedId;
+  state.interventionStudentDraft = {
+    selectedStudentIds: (Array.isArray(selectedIds) ? selectedIds : [selectedIds])
+      .filter(Boolean)
+      .filter((studentId) => activeStudents.some((student) => student.id === studentId)),
+    query: "",
+    lockedToSingleStudent: lockToSingleStudent,
+  };
+  if (!state.interventionStudentDraft.selectedStudentIds.length && activeStudents[0]) {
+    state.interventionStudentDraft.selectedStudentIds = [activeStudents[0].id];
   }
+  renderInterventionStudentPicker();
 
   if (
     state.assignmentStudentId &&
@@ -4716,36 +4935,31 @@ function populateContentAreaOptions() {
   dom.interventionContentAreaInput.innerHTML = options;
 }
 
-function updateInterventionAppOptions() {
-  const studentId = dom.interventionStudentInput.value;
+function updateInterventionAppOptions(selectedAppId = "") {
+  const selectedStudentIds = [...new Set(state.interventionStudentDraft.selectedStudentIds)].filter(Boolean);
   const contentAreaId = dom.interventionContentAreaInput.value;
-  const assignedApps = new Set(
-    getAssignmentsForStudent(studentId)
-      .filter((assignment) => assignment.active)
-      .map((assignment) => assignment.appId),
-  );
-
-  const appOptions = [...state.data.apps]
-    .filter((app) => app.active && app.contentAreaId === contentAreaId)
-    .sort((left, right) => {
-      const leftAssigned = assignedApps.has(left.id) ? 0 : 1;
-      const rightAssigned = assignedApps.has(right.id) ? 0 : 1;
-      if (leftAssigned !== rightAssigned) {
-        return leftAssigned - rightAssigned;
-      }
-      return left.name.localeCompare(right.name);
-    });
+  if (!contentAreaId) {
+    dom.interventionAppInput.innerHTML = `<option value="">Select an app</option>`;
+    dom.interventionAppInput.value = "";
+    dom.interventionAppInput.disabled = true;
+    return;
+  }
+  const appOptions = getQuickAddAppOptions(contentAreaId, selectedStudentIds);
+  const assignedApps = new Set(appOptions.filter((app) => app.assignedCount > 0).map((app) => app.id));
 
   dom.interventionAppInput.innerHTML = appOptions.length
-    ? appOptions
-        .map((app) => {
+    ? [
+        `<option value="">Select an app</option>`,
+        ...appOptions.map((app) => {
           const label = assignedApps.has(app.id) ? `${app.name} (Assigned)` : app.name;
           return `<option value="${escapeHtml(app.id)}">${escapeHtml(label)}</option>`;
-        })
-        .join("")
+        }),
+      ].join("")
     : `<option value="">No apps available</option>`;
 
   dom.interventionAppInput.disabled = appOptions.length === 0;
+  dom.interventionAppInput.value =
+    selectedAppId && appOptions.some((app) => app.id === selectedAppId) ? selectedAppId : "";
 }
 
 async function handleContentAreaSubmit(event) {
@@ -4937,8 +5151,9 @@ function syncStudentSheetFields() {
   dom.studentSyncSummary.textContent = student
     ? `Sync ${student.name}'s profile, WIDA entries, and intervention records to the linked Google Sheet.`
     : "Select a student before syncing to the linked Google Sheet.";
-  dom.studentSyncSubmitButton.disabled = !student;
-  dom.studentImportSubmitButton.disabled = !student;
+  const studentSyncBusy = state.isStudentSheetSyncing || state.isStudentSheetImporting;
+  dom.studentSyncSubmitButton.disabled = !student || studentSyncBusy;
+  dom.studentImportSubmitButton.disabled = !student || studentSyncBusy;
 }
 
 function syncExportFields() {
@@ -4952,6 +5167,7 @@ function syncExportFields() {
   dom.exportSubmitButton.textContent = exportToGoogleSheet
     ? "Sync to Google Sheet"
     : "Download Export";
+  dom.exportSubmitButton.disabled = state.isExportSyncing;
 
   if (exportToGoogleSheet) {
     dom.exportGoogleSheetSummary.textContent =
@@ -4967,6 +5183,8 @@ function syncExportFields() {
 async function handleExportSubmit(event) {
   event.preventDefault();
   setStatus(dom.exportStatus, "", "neutral");
+  state.isExportSyncing = true;
+  syncExportFields();
 
   try {
     const scope = dom.exportScopeSelect.value;
@@ -5039,12 +5257,17 @@ async function handleExportSubmit(event) {
   } catch (error) {
     console.error(error);
     setStatus(dom.exportStatus, readableError(error), "error");
+  } finally {
+    state.isExportSyncing = false;
+    syncExportFields();
   }
 }
 
 async function handleStudentSheetSyncSubmit(event) {
   event.preventDefault();
   setStatus(dom.studentSyncStatus, "", "neutral");
+  state.isStudentSheetSyncing = true;
+  syncStudentSheetFields();
 
   try {
     const student = getStudentById(state.selectedStudentId);
@@ -5089,6 +5312,9 @@ async function handleStudentSheetSyncSubmit(event) {
   } catch (error) {
     console.error(error);
     setStatus(dom.studentSyncStatus, readableError(error), "error");
+  } finally {
+    state.isStudentSheetSyncing = false;
+    syncStudentSheetFields();
   }
 }
 
@@ -5223,6 +5449,8 @@ async function applyImportedStudentSheetPayload(student, payload) {
 
 async function handleStudentSheetImportClick() {
   setStatus(dom.studentSyncStatus, "", "neutral");
+  state.isStudentSheetImporting = true;
+  syncStudentSheetFields();
 
   try {
     const student = getStudentById(state.selectedStudentId);
@@ -5265,6 +5493,9 @@ async function handleStudentSheetImportClick() {
   } catch (error) {
     console.error(error);
     setStatus(dom.studentSyncStatus, readableError(error), "error");
+  } finally {
+    state.isStudentSheetImporting = false;
+    syncStudentSheetFields();
   }
 }
 
@@ -6044,12 +6275,13 @@ function getQuickAddInterventionOptions(contentAreaId) {
   return QUICK_ADD_INTERVENTIONS[contentAreaKey] || [];
 }
 
-function getQuickAddStudentSuggestions(query) {
-  const selectedStudentIds = new Set(state.quickAdd.selectedStudentIds);
+function getStudentSuggestions(query, selectedStudentIds = [], limit = null) {
+  const selectedSet = new Set((Array.isArray(selectedStudentIds) ? selectedStudentIds : []).filter(Boolean));
   const normalizedQuery = normalizeLabel(query);
+  const desiredLimit = Number.isInteger(limit) && limit > 0 ? limit : normalizedQuery ? 8 : 6;
 
   return getActiveStudents()
-    .filter((student) => !selectedStudentIds.has(student.id))
+    .filter((student) => !selectedSet.has(student.id))
     .map((student) => ({
       student,
       rank: getQuickAddStudentMatchRank(student, normalizedQuery),
@@ -6061,8 +6293,12 @@ function getQuickAddStudentSuggestions(query) {
       }
       return left.student.name.localeCompare(right.student.name);
     })
-    .slice(0, normalizedQuery ? 8 : 6)
+    .slice(0, desiredLimit)
     .map(({ student }) => student);
+}
+
+function getQuickAddStudentSuggestions(query) {
+  return getStudentSuggestions(query, state.quickAdd.selectedStudentIds);
 }
 
 function getQuickAddStudentMatchRank(student, normalizedQuery) {
@@ -6617,6 +6853,11 @@ async function handleStudentProfileConfigSubmit(event) {
   const allotmentLevel = Number.parseInt(String(form.get("allotmentLevel") || ""), 10);
   const dailyAverageXpGoal = Number.parseInt(String(form.get("dailyAverageXpGoal") || ""), 10);
 
+  if (!classCode) {
+    setStatus(dom.studentStatusMessage, "Class code is required.", "error");
+    return;
+  }
+
   if (!Number.isInteger(allotmentLevel) || allotmentLevel < 1 || allotmentLevel > 6) {
     setStatus(dom.studentStatusMessage, "SOAR/WIDA level must be a whole number from 1 to 6.", "error");
     return;
@@ -6729,7 +6970,8 @@ function renderInterventionCard(record, contentAreaMap, appMap) {
 }
 
 function buildInterventionCapSummary() {
-  const student = getStudentById(dom.interventionStudentInput.value);
+  const targetStudentId = state.interventionStudentDraft.selectedStudentIds[0] || dom.interventionStudentInput.value;
+  const student = getStudentById(targetStudentId);
   if (!student || !dom.interventionDateInput.value || !dom.interventionContentAreaInput.value) {
     return null;
   }
@@ -6751,7 +6993,7 @@ function updateInterventionCapSummary() {
   }
 
   const assessment = buildInterventionCapSummary();
-  if (!assessment || !dom.interventionCategoryInput.value.trim()) {
+  if (!assessment || !getInterventionCategoryName()) {
     dom.interventionCapSummary.innerHTML =
       `<div class="empty-inline">Choose a student, content area, intervention, and XP to preview the manual XP guardrails.</div>`;
     dom.interventionCapWarning.textContent = "";
@@ -6761,6 +7003,10 @@ function updateInterventionCapSummary() {
     return;
   }
 
+  const selectedStudentCount = state.interventionStudentDraft.selectedStudentIds.length;
+  const previewStudentName = getStudentById(
+    state.interventionStudentDraft.selectedStudentIds[0] || dom.interventionStudentInput.value,
+  )?.name || "the first selected student";
   dom.interventionCapSummary.innerHTML = renderCapSummaryMarkup(
     {
       used: assessment.projectedUsed,
@@ -6771,6 +7017,10 @@ function updateInterventionCapSummary() {
       selectedGoal: assessment.selectedGoal,
     },
     "manual XP",
+  ) + (
+    selectedStudentCount > 1
+      ? `<p class="field-note">Cap preview is shown for ${escapeHtml(previewStudentName)} and the same intervention will be saved for ${selectedStudentCount} students.</p>`
+      : ""
   );
   dom.interventionCapWarning.textContent = assessment.messages[0] || "";
   dom.interventionCapWarning.classList.toggle(

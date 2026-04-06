@@ -253,7 +253,7 @@
             </section>
 
             <footer class="screen-version-footer">
-              <span class="screen-version-badge" id="homeVersion">Version 1.0.1</span>
+            <span class="screen-version-badge" id="homeVersion">Version 1.0.3</span>
             </footer>
           </section>
 
@@ -824,7 +824,7 @@
           </label>
           <label class="field">
             <span>Class Code</span>
-            <input id="studentClassCodeInput" placeholder="R101" />
+            <input id="studentClassCodeInput" placeholder="R101" required />
           </label>
           <label class="field">
             <span>Band</span>
@@ -966,7 +966,11 @@
         <div class="modal-grid">
           <label class="field">
             <span>Student</span>
-            <select id="interventionStudentInput" required></select>
+            <select id="interventionStudentInput" class="hidden"></select>
+            <input id="interventionStudentDisplay" readonly />
+            <input id="interventionStudentSearchInput" class="hidden" type="search" autocomplete="off" />
+            <div class="student-suggestion-list hidden" id="interventionStudentSuggestions"></div>
+            <div class="selected-student-list hidden" id="interventionSelectedStudents"></div>
           </label>
           <label class="field">
             <span>Date</span>
@@ -986,17 +990,19 @@
           </label>
           <label class="field">
             <span>Intervention Category</span>
-            <input id="interventionCategoryInput" required />
-          </label>
-          <label class="field">
-            <span>Task Detail</span>
-            <input id="interventionTaskDetailInput" required />
+            <select id="interventionCategoryInput" required></select>
           </label>
           <label class="field">
             <span>XP Awarded</span>
-            <input id="interventionXpInput" type="number" min="0" step="1" required />
+            <input id="interventionXpInput" type="number" min="0" step="1" required value="2" />
           </label>
         </div>
+
+        <label class="field hidden" id="interventionCustomCategoryField">
+          <span>Custom Intervention</span>
+          <input id="interventionCustomCategoryInput" placeholder="Enter the intervention name" />
+        </label>
+        <input id="interventionTaskDetailInput" type="hidden" />
 
         <label class="field">
           <span>Notes</span>
@@ -1033,19 +1039,9 @@
           ></textarea>
         </label>
 
-        <div class="modal-grid">
-          <label class="field">
-            <span>Repeated in New Context</span>
-            <select id="interventionRepeatedInput" required>
-              <option value="false">No</option>
-              <option value="true">Yes</option>
-            </select>
-          </label>
-          <label class="field hidden" id="newContextNoteField">
-            <span>New Context Note</span>
-            <input id="interventionNewContextInput" />
-          </label>
-        </div>
+        <input id="interventionRepeatedInput" type="hidden" value="false" />
+        <input id="interventionNewContextInput" type="hidden" />
+        <div class="hidden" id="newContextNoteField"></div>
 
         <div class="modal-actions">
           <button class="button button-primary" type="submit">Save Intervention</button>

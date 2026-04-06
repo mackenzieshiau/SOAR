@@ -687,9 +687,34 @@ class SQLiteDataService {
 
   async saveStudent(student) {
     await this.ensureReady();
+    const trimmedName = String(student.name || "").trim();
+    const trimmedClassCode = String(student.classCode || "").trim();
+    if (!trimmedName) {
+      throw new Error("Student name is required.");
+    }
+    if (!trimmedClassCode) {
+      throw new Error("Class code is required.");
+    }
     const id = student.id || generateId("student");
     const createdAt = student.createdAt || new Date().toISOString();
     const existing = this.queryOne("select id from students where id = $id", { $id: id });
+    const duplicateStudent = this.queryOne(
+      `
+        select id
+        from students
+        where lower(name) = lower($name)
+          and class_code = $classCode
+          and id != $id
+      `,
+      {
+        $id: id,
+        $name: trimmedName,
+        $classCode: trimmedClassCode,
+      },
+    );
+    if (duplicateStudent) {
+      throw new Error("A student with this name and class code already exists.");
+    }
 
     if (existing) {
       this.run(
@@ -708,12 +733,12 @@ class SQLiteDataService {
         `,
         {
           $id: id,
-          $name: student.name.trim(),
+          $name: trimmedName,
           $band: student.band,
           $gradeBand: student.gradeBand,
           $widaLevel: Number(student.widaLevel),
           $schoolYear: String(student.schoolYear || "").trim(),
-          $classCode: String(student.classCode || "").trim(),
+          $classCode: trimmedClassCode,
           $allotmentLevel: Number(student.allotmentLevel || student.widaLevel),
           $dailyAverageXpGoal: Number(student.dailyAverageXpGoal),
           $active: toDbBoolean(student.active),
@@ -751,12 +776,12 @@ class SQLiteDataService {
         `,
         {
           $id: id,
-          $name: student.name.trim(),
+          $name: trimmedName,
           $band: student.band,
           $gradeBand: student.gradeBand,
           $widaLevel: Number(student.widaLevel),
           $schoolYear: String(student.schoolYear || "").trim(),
-          $classCode: String(student.classCode || "").trim(),
+          $classCode: trimmedClassCode,
           $allotmentLevel: Number(student.allotmentLevel || student.widaLevel),
           $dailyAverageXpGoal: Number(student.dailyAverageXpGoal),
           $active: toDbBoolean(student.active),

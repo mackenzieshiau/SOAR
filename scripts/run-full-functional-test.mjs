@@ -212,6 +212,7 @@ try {
     const students = [
       {
         name: `QA Student A ${stamp}`,
+        classCode: `A-${stamp.toString().slice(-4)}`,
         band: "K-2",
         gradeBand: "Grade 1",
         widaLevel: "2",
@@ -220,6 +221,7 @@ try {
       },
       {
         name: `QA Student B ${stamp}`,
+        classCode: `B-${stamp.toString().slice(-4)}`,
         band: "3-6",
         gradeBand: "Grades 2-3",
         widaLevel: "3",
@@ -235,6 +237,7 @@ try {
       await page.locator("#openAddStudentButton").click();
       await page.locator("#studentModal").waitFor({ state: "visible", timeout: 15000 });
       await page.locator("#studentNameInput").fill(student.name);
+      await page.locator("#studentClassCodeInput").fill(student.classCode);
       await page.locator("#studentBandInput").selectOption(student.band);
       await page.locator("#studentGradeBandInput").selectOption(student.gradeBand);
       await page.locator("#studentWidaInput").selectOption(student.widaLevel);
@@ -247,6 +250,27 @@ try {
 
     qa.studentA = students[0].name;
     qa.studentB = students[1].name;
+    qa.studentAClassCode = students[0].classCode;
+    qa.studentBClassCode = students[1].classCode;
+  });
+
+  await stage("Student modal requires class code and blocks duplicates", async () => {
+    await page.locator("#openAddStudentButton").click();
+    await page.locator("#studentModal").waitFor({ state: "visible", timeout: 15000 });
+    await page.locator("#studentNameInput").fill(`Missing Code ${Date.now()}`);
+    await page.locator("#studentModal button[type='submit']").click();
+    assert.equal(
+      await page.locator("#studentClassCodeInput").evaluate((input) => input.matches(":invalid")),
+      true,
+    );
+    await page.locator("#studentClassCodeInput").fill(qa.studentAClassCode);
+    await page.locator("#studentNameInput").fill(qa.studentA);
+    const duplicateDialog = page.waitForEvent("dialog").then((dialog) => dialog.accept());
+    await page.locator("#studentModal button[type='submit']").click();
+    await duplicateDialog;
+    await page.locator("#studentModal").waitFor({ state: "visible", timeout: 15000 });
+    await page.getByRole("button", { name: "Cancel" }).click();
+    await page.locator("#studentModal").waitFor({ state: "hidden", timeout: 15000 });
   });
 
   await stage("Quick link modal can create a group and preload quick add", async () => {
@@ -495,12 +519,18 @@ try {
     yesterday.setDate(yesterday.getDate() - 1);
     const yesterdayIso = yesterday.toISOString().slice(0, 10);
 
+    const currentProfileStudentName = (await page.locator("#studentProfileName").textContent())?.trim() || "";
     await page.getByRole("button", { name: "Add Intervention" }).click();
     await page.locator("#interventionModal").waitFor({ state: "visible", timeout: 15000 });
+    const studentDisplayValue = await page.locator("#interventionStudentDisplay").inputValue();
+    assert.match(
+      studentDisplayValue,
+      new RegExp(currentProfileStudentName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
+    );
     await page.locator("#interventionDateInput").fill(yesterdayIso);
     await choosePreferredSelectOption(page, "#interventionContentAreaInput", /^Reading$/i);
     await choosePreferredSelectOption(page, "#interventionAppInput", /^Amplify$/i);
-    await page.locator("#interventionCategoryInput").fill("TPR");
+    await page.locator("#interventionCategoryInput").selectOption({ label: "TPR" });
     await page.waitForFunction(() =>
       [...document.querySelectorAll('#interventionEvidenceChecklist [data-field="interventionEvidenceOption"]')]
         .some((input) => (input.getAttribute("data-evidence-value") || "").includes("Student produces the target sound correctly")),
@@ -521,7 +551,6 @@ try {
       },
       qa.modalEvidenceChoice,
     );
-    await page.locator("#interventionTaskDetailInput").fill("QA modal evidence task");
     await page.locator("#interventionXpInput").fill("1");
     await page.locator("#interventionNotesInput").fill(qa.modalEvidenceNote);
     await page.locator("#interventionEvidenceInput").fill("Teacher observed oral production");
@@ -548,8 +577,7 @@ try {
     await page.locator("#interventionModal").waitFor({ state: "visible", timeout: 15000 });
     await choosePreferredSelectOption(page, "#interventionContentAreaInput", /^Other$/i);
     await choosePreferredSelectOption(page, "#interventionAppInput", /^Other$/i);
-    await page.locator("#interventionCategoryInput").fill("QA manual red");
-    await page.locator("#interventionTaskDetailInput").fill("QA task red");
+    await page.locator("#interventionCategoryInput").selectOption({ label: "Other" });
     await page.locator("#interventionXpInput").fill("2");
     await page.locator("#interventionNotesInput").fill(qa.redNote);
     await page.locator("#interventionEvidenceInput").fill("QA evidence red");
@@ -574,8 +602,7 @@ try {
     await page.locator("#interventionModal").waitFor({ state: "visible", timeout: 15000 });
     await choosePreferredSelectOption(page, "#interventionContentAreaInput", /^Other$/i);
     await choosePreferredSelectOption(page, "#interventionAppInput", /^Other$/i);
-    await page.locator("#interventionCategoryInput").fill("QA manual pink");
-    await page.locator("#interventionTaskDetailInput").fill("QA task pink");
+    await page.locator("#interventionCategoryInput").selectOption({ label: "Other" });
     await page.locator("#interventionXpInput").fill("1");
     await page.locator("#interventionNotesInput").fill(qa.pinkNote);
     await page.locator("#interventionEvidenceInput").fill("QA evidence pink");
@@ -624,18 +651,22 @@ try {
 
   await stage("Delete group and student", async () => {
     qa.deleteStudent = `QA Delete Student ${Date.now()}`;
+    qa.deleteStudentClassCode = `DEL-${Date.now().toString().slice(-4)}`;
     qa.deleteGroup = `QA Delete Group ${Date.now()}`;
 
     await page.locator("#studentsButton").click();
     await page.locator("#openAddStudentButton").click();
     await page.locator("#studentModal").waitFor({ state: "visible", timeout: 15000 });
     await page.locator("#studentNameInput").fill(qa.deleteStudent);
+    await page.locator("#studentClassCodeInput").fill(qa.deleteStudentClassCode);
     await page.locator("#studentBandInput").selectOption("K-2");
     await page.locator("#studentGradeBandInput").selectOption("Grade 1");
     await page.locator("#studentWidaInput").selectOption("2");
     await page.locator("#studentAllotmentLevelInput").selectOption("2");
     await page.locator("#studentDailyAverageGoalInput").selectOption("80");
     await page.locator("#studentModal button[type='submit']").click();
+    await page.locator("#studentModal").waitFor({ state: "hidden", timeout: 15000 });
+    await page.locator("#studentSearchInput").fill("");
     await page.locator(`#studentGrid .student-tile:has-text("${qa.deleteStudent}")`).waitFor({ state: "visible", timeout: 15000 });
 
     await page.locator("#studentSearchInput").fill(qa.deleteStudent);
@@ -723,8 +754,31 @@ try {
     assert.match(excelDownload.suggestedFilename(), /\.xls$/i);
 
     await page.locator("#exportFormatSelect").selectOption("google-sheet");
-    await page.getByRole("button", { name: "Sync to Google Sheet" }).click();
-    await waitForStatusText(page, "#exportStatus", /google sheets api credentials are not configured/i);
+    await page.route("**/api/google-sheet-sync", async (route) => {
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          ok: true,
+          spreadsheetId: "test-sheet",
+          message: "Delayed test sync completed.",
+        }),
+      });
+    }, { times: 1 });
+    const syncButton = page.getByRole("button", { name: "Sync to Google Sheet" });
+    await syncButton.click();
+    await page.waitForFunction(() => {
+      const button = [...document.querySelectorAll("button")]
+        .find((node) => (node.textContent || "").includes("Sync to Google Sheet"));
+      return Boolean(button?.disabled);
+    }, { timeout: 5000 });
+    await waitForStatusText(page, "#exportStatus", /delayed test sync completed/i);
+    await page.waitForFunction(() => {
+      const button = [...document.querySelectorAll("button")]
+        .find((node) => (node.textContent || "").includes("Sync to Google Sheet"));
+      return Boolean(button) && !button.disabled;
+    }, { timeout: 5000 });
   });
 
   await stage("Logout and admin login", async () => {
