@@ -1104,6 +1104,14 @@ class SQLiteDataService {
     return mapInterventions(this.query("select * from interventions where id = $id", { $id: id }))[0];
   }
 
+  async deleteIntervention(interventionId) {
+    await this.ensureReady();
+    this.run("delete from interventions where id = $id", {
+      $id: interventionId,
+    });
+    this.persist();
+  }
+
   async saveAppSetting(key, value) {
     await this.ensureReady();
     const existing = this.queryOne("select key from app_settings where key = $key", { $key: key });

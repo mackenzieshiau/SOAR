@@ -54,7 +54,7 @@ async function bootLegacyApp() {
     accessCode: "SOAR",
     ...(window.SOAR_CONFIG || {}),
   };
-window.SOAR_APP_VERSION = packageData.version || "1.0.3";
+  window.SOAR_APP_VERSION = packageData.version || "1.0.4";
   installFallbackTeacherLogin();
 
   const homeVersion = document.getElementById("homeVersion");

@@ -454,6 +454,7 @@ const dom = {
   interventionCapWarning: document.querySelector("#interventionCapWarning"),
   interventionOverrideNoteField: document.querySelector("#interventionOverrideNoteField"),
   interventionOverrideNoteInput: document.querySelector("#interventionOverrideNoteInput"),
+  deleteInterventionButton: document.querySelector("#deleteInterventionButton"),
   interventionRepeatedInput: document.querySelector("#interventionRepeatedInput"),
   interventionNewContextInput: document.querySelector("#interventionNewContextInput"),
   newContextNoteField: document.querySelector("#newContextNoteField"),
@@ -679,6 +680,7 @@ dom.groupDeleteButton.addEventListener("click", handleGroupDeleteClick);
   dom.interventionEvidenceChecklist.addEventListener("change", handleInterventionEvidenceChecklistChange);
   dom.interventionEvidenceInput.addEventListener("input", handleInterventionEvidenceInput);
   dom.interventionOverrideNoteInput.addEventListener("input", updateInterventionCapSummary);
+  dom.deleteInterventionButton.addEventListener("click", handleInterventionDeleteClick);
   dom.adminPasswordForm.addEventListener("submit", handleAdminPasswordSubmit);
   dom.guideForm.addEventListener("submit", handleGuideSubmit);
   dom.resetGuideButton.addEventListener("click", resetGuideForm);
@@ -4774,6 +4776,7 @@ function openInterventionModal(studentId = null, interventionId = "") {
   dom.interventionTeacherInput.value = record?.teacherName || getDefaultTeacherName();
   dom.interventionRepeatedInput.value = "false";
   dom.interventionOverrideNoteInput.value = record?.overrideNote || "";
+  dom.deleteInterventionButton.classList.toggle("hidden", !record);
   dom.interventionXpInput.value = record ? String(record.xpAwarded) : "2";
   dom.interventionNotesInput.value = record?.notes || "";
   dom.interventionEvidenceInput.value = record?.evidenceOfProduction || "";
@@ -4798,10 +4801,17 @@ function openInterventionModal(studentId = null, interventionId = "") {
 
 function handleDailyAccordionClick(event) {
   const editButton = event.target.closest("[data-action='edit-intervention']");
-  if (!editButton) {
+  if (editButton) {
+    openInterventionModal(state.selectedStudentId, editButton.getAttribute("data-intervention-id"));
     return;
   }
-  openInterventionModal(state.selectedStudentId, editButton.getAttribute("data-intervention-id"));
+
+  const deleteButton = event.target.closest("[data-action='delete-intervention']");
+  if (!deleteButton) {
+    return;
+  }
+
+  void deleteInterventionEntry(deleteButton.getAttribute("data-intervention-id"));
 }
 
 async function handleInterventionSubmit(event) {
@@ -4815,37 +4825,6 @@ async function handleInterventionSubmit(event) {
   if (!interventionCategory) {
     dom.interventionCategoryInput.focus();
     window.alert("Choose an intervention category before saving.");
-    return;
-  }
-
-  const assessment = buildInterventionCapSummary();
-  if (assessment?.isHardWarning && assessment.color === "red") {
-    const shouldContinue = window.confirm(
-      `This entry will place the student exactly at their daily manual XP allotment of ${assessment.dailyCap}. Continue?`,
-    );
-    if (!shouldContinue) {
-      return;
-    }
-  }
-
-  if (assessment && assessment.requiresOverride && !dom.interventionOverrideNoteInput.value.trim()) {
-    dom.interventionOverrideNoteInput.focus();
-    window.alert("Add an override note before saving an over-cap manual XP entry.");
-    return;
-  }
-
-  if (
-    assessment
-    && (
-      (assessment.blockCap !== null && assessment.projectedBlockUsed > assessment.blockCap)
-      || (assessment.categoryCap !== null && assessment.projectedCategoryUsed > assessment.categoryCap)
-      || (
-        assessment.miniTotalCap !== null
-        && assessment.projectedMiniTotalUsed > assessment.miniTotalCap
-      )
-    )
-  ) {
-    window.alert(assessment.messages[assessment.messages.length - 1] || "This entry exceeds a subject-level cap.");
     return;
   }
 
@@ -5092,6 +5071,15 @@ async function handleAssignmentToggle(event) {
     console.error(error);
     window.alert(`Unable to update assignment.\n\n${readableError(error)}`);
   }
+}
+
+async function handleInterventionDeleteClick() {
+  const interventionId = String(dom.interventionIdInput.value || "").trim();
+  if (!interventionId) {
+    return;
+  }
+
+  await deleteInterventionEntry(interventionId, { closeModal: true });
 }
 
 async function saveStudentProfileAppAssignment({
@@ -6899,6 +6887,9 @@ function renderInterventionCard(record, contentAreaMap, appMap) {
           <button class="button button-secondary" type="button" data-action="edit-intervention" data-intervention-id="${escapeHtml(record.id)}">
             Edit
           </button>
+          <button class="button button-danger" type="button" data-action="delete-intervention" data-intervention-id="${escapeHtml(record.id)}">
+            Delete
+          </button>
         </div>
       </div>
       <div class="record-grid">
@@ -6982,8 +6973,9 @@ function buildInterventionCapSummary() {
     student,
     date: dom.interventionDateInput.value,
     contentAreaId: dom.interventionContentAreaInput.value,
-    interventionCategory: dom.interventionCategoryInput.value,
+    interventionCategory: getInterventionCategoryName(),
     proposedXp,
+    excludeInterventionId: String(dom.interventionIdInput.value || "").trim(),
   });
 }
 
@@ -7027,8 +7019,36 @@ function updateInterventionCapSummary() {
     "warning-text",
     assessment.isSoftWarning || assessment.isHardWarning,
   );
-  dom.interventionOverrideNoteField.classList.toggle("hidden", !assessment.requiresOverride);
-  dom.interventionOverrideNoteInput.required = assessment.requiresOverride;
+  dom.interventionOverrideNoteField.classList.add("hidden");
+  dom.interventionOverrideNoteInput.required = false;
+}
+
+async function deleteInterventionEntry(interventionId, { closeModal = false } = {}) {
+  const record = state.data.interventions.find((item) => item.id === interventionId);
+  if (!record) {
+    return;
+  }
+
+  const shouldDelete = window.confirm(
+    `Delete this intervention entry for ${getStudentById(record.studentId)?.name || "this student"}?`,
+  );
+  if (!shouldDelete) {
+    return;
+  }
+
+  try {
+    await state.service.deleteIntervention(interventionId);
+    if (closeModal) {
+      dom.interventionModal.close();
+    }
+    await refreshData();
+    if (state.currentScreen === "student") {
+      switchScreen("student");
+    }
+  } catch (error) {
+    console.error(error);
+    window.alert(`Unable to delete intervention.\n\n${readableError(error)}`);
+  }
 }
 
 function renderAnalytics() {

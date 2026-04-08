@@ -253,7 +253,7 @@
             </section>
 
             <footer class="screen-version-footer">
-            <span class="screen-version-badge" id="homeVersion">Version 1.0.3</span>
+              <span class="screen-version-badge" id="homeVersion">Version 1.0.4</span>
             </footer>
           </section>
 
@@ -1035,7 +1035,7 @@
           <textarea
             id="interventionOverrideNoteInput"
             rows="3"
-            placeholder="Required if manual XP exceeds the student's allowable daily cap."
+            placeholder="Optional note for a warning-level manual XP entry."
           ></textarea>
         </label>
 
@@ -1044,6 +1044,13 @@
         <div class="hidden" id="newContextNoteField"></div>
 
         <div class="modal-actions">
+          <button
+            class="button button-danger hidden"
+            id="deleteInterventionButton"
+            type="button"
+          >
+            Delete Entry
+          </button>
           <button class="button button-primary" type="submit">Save Intervention</button>
           <button
             class="button button-secondary"

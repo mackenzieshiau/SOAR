@@ -571,7 +571,7 @@ try {
   await stage("Intervention modal red and pink guardrails", async () => {
     qa.redNote = `QA red note ${Date.now()}`;
     qa.pinkNote = `QA pink note ${Date.now()}`;
-    qa.overrideNote = `QA override ${Date.now()}`;
+    qa.editedPinkNote = `QA pink edited ${Date.now()}`;
 
     await page.getByRole("button", { name: "Add Intervention" }).click();
     await page.locator("#interventionModal").waitFor({ state: "visible", timeout: 15000 });
@@ -585,12 +585,7 @@ try {
       const text = document.querySelector("#interventionCapSummary")?.textContent || "";
       return /nearing allotment|daily manual xp allotment used|exactly at the allotment/i.test(text);
     });
-    const redDialog = page
-      .waitForEvent("dialog", { timeout: 2000 })
-      .then((dialog) => dialog.accept())
-      .catch(() => null);
     await page.getByRole("button", { name: "Save Intervention" }).click();
-    await redDialog;
     await page.locator("#interventionModal").waitFor({ state: "hidden", timeout: 15000 });
     await page.locator('#studentProfileTabs [data-student-tab="log"]').click();
     await page.locator(".intervention-card").filter({ hasText: qa.redNote }).first().waitFor({
@@ -607,46 +602,42 @@ try {
     await page.locator("#interventionNotesInput").fill(qa.pinkNote);
     await page.locator("#interventionEvidenceInput").fill("QA evidence pink");
     await page.waitForFunction(() => {
-      const overrideVisible = !document.querySelector("#interventionOverrideNoteField")?.classList.contains("hidden");
       const summaryText = document.querySelector("#interventionCapSummary")?.textContent || "";
-      return overrideVisible || /at allotment|daily manual xp allotment used|daily cap/i.test(summaryText);
+      return /at allotment|daily manual xp allotment used|daily cap/i.test(summaryText);
     });
-    const pinkDialog = page
-      .waitForEvent("dialog", { timeout: 2000 })
-      .then((dialog) => dialog.accept())
-      .catch(() => null);
     await page.getByRole("button", { name: "Save Intervention" }).click();
-    await pinkDialog;
-    if (await page.locator("#interventionModal").isVisible()) {
-      const overrideState = await page.locator("#interventionOverrideNoteInput").evaluate((element) => ({
-        required: element.required,
-        valueMissing: element.validity.valueMissing,
-      }));
-      if (overrideState.required && overrideState.valueMissing) {
-        await page.locator("#interventionOverrideNoteInput").fill(qa.overrideNote);
-      }
-      const pinkFollowupDialog = page
-        .waitForEvent("dialog", { timeout: 2000 })
-        .then((dialog) => dialog.accept())
-        .catch(() => null);
-      await page.getByRole("button", { name: "Save Intervention" }).click();
-      await pinkFollowupDialog;
-    }
     await page.locator("#interventionModal").waitFor({ state: "hidden", timeout: 15000 });
     await page.locator('#studentProfileTabs [data-student-tab="log"]').click();
     await page.locator(".intervention-card").filter({ hasText: qa.pinkNote }).first().waitFor({
       state: "visible",
       timeout: 15000,
     });
-    if (qa.overrideNote) {
-      const overrideCards = page.locator(".intervention-card").filter({ hasText: qa.overrideNote });
-      if (await overrideCards.count()) {
-        await overrideCards.first().waitFor({
-          state: "visible",
-          timeout: 15000,
-        });
-      }
-    }
+  });
+
+  await stage("Edit and delete intervention entries", async () => {
+    const targetCard = page.locator(".intervention-card").filter({ hasText: qa.pinkNote }).first();
+    await targetCard.getByRole("button", { name: "Edit" }).click();
+    await page.locator("#interventionModal").waitFor({ state: "visible", timeout: 15000 });
+    assert.equal(await page.locator("#interventionXpInput").inputValue(), "1");
+    await page.locator("#interventionNotesInput").fill(qa.editedPinkNote);
+    await page.locator("#interventionXpInput").fill("7");
+    await page.getByRole("button", { name: "Save Intervention" }).click();
+    await page.locator("#interventionModal").waitFor({ state: "hidden", timeout: 15000 });
+
+    const editedCard = page.locator(".intervention-card").filter({ hasText: qa.editedPinkNote }).first();
+    await editedCard.waitFor({ state: "visible", timeout: 15000 });
+    assert.match(await editedCard.textContent(), /XP 7/i);
+
+    await Promise.all([
+      page.waitForEvent("dialog", { timeout: 15000 }).then((dialog) => dialog.accept()),
+      editedCard.getByRole("button", { name: "Delete" }).click(),
+    ]);
+    await page.waitForFunction(
+      (expectedNote) => ![...document.querySelectorAll(".intervention-card")]
+        .some((card) => card.textContent?.includes(expectedNote)),
+      qa.editedPinkNote,
+      { timeout: 15000 },
+    );
   });
 
   await stage("Delete group and student", async () => {
